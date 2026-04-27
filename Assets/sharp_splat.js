@@ -39,50 +39,19 @@ async function sharpSplatGetImageBase64(src) {
 }
 
 /**
- * Triggers a browser download of binary data as a named file.
- */
-function sharpSplatDownloadFile(base64Data, filename) {
-    let byteChars = atob(base64Data);
-    let byteNumbers = new Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) {
-        byteNumbers[i] = byteChars.charCodeAt(i);
-    }
-    let blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/octet-stream' });
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-/**
- * Decodes a base64 string into an ArrayBuffer.
- */
-function sharpSplatBase64ToArrayBuffer(base64) {
-    let binary = atob(base64);
-    let len = binary.length;
-    let bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes.buffer;
-}
-
-/**
  * Opens the in-browser 3D Gaussian Splat viewer in a fullscreen overlay.
- * Loads gsplat.js from CDN on first call, then renders the .splat data.
- * @param {string} splatBase64 - Base64-encoded .splat file data.
+ * Loads gsplat.js from CDN on first call, then renders the .splat file via its URL.
+ * @param {string} splatUrl - URL of the .splat file (e.g. /View/...).
  * @param {string} filename - Filename shown in the viewer title.
  */
-async function sharpSplatOpenViewer(splatBase64, filename) {
+async function sharpSplatOpenViewer(splatUrl, filename) {
     // Remove any existing viewer.
     let existing = document.getElementById('sharp_splat_viewer_overlay');
     if (existing) {
         existing.remove();
     }
+
+    console.log('SharpSplat: Loading file: ' + splatUrl)
 
     // Build the overlay.
     let overlay = document.createElement('div');
@@ -103,7 +72,14 @@ async function sharpSplatOpenViewer(splatBase64, filename) {
     let downloadBtn = document.createElement('button');
     downloadBtn.className = 'basic-button';
     downloadBtn.textContent = 'Download Splat';
-    downloadBtn.onclick = () => sharpSplatDownloadFile(splatBase64, filename);
+    downloadBtn.onclick = () => {
+        let a = document.createElement('a');
+        a.href = splatUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
 
     let closeBtn = document.createElement('button');
     closeBtn.className = 'basic-button';
@@ -171,9 +147,10 @@ async function sharpSplatOpenViewer(splatBase64, filename) {
         let camera = new SPLAT.Camera();
         controls = new SPLAT.OrbitControls(camera, canvas);
 
-        // Load .splat from ArrayBuffer using the raw binary loader (no PLY type parsing).
-        let arrayBuffer = sharpSplatBase64ToArrayBuffer(splatBase64);
-        SPLAT.Loader.LoadFromArrayBuffer(arrayBuffer, scene);
+        // Load the .splat file by URL using the async loader.
+        // LoadAsync performs multiple awaits (fetch + stream read) which give gsplat.js's
+        // internal WebAssembly module time to finish initialising before the render loop starts.
+        await SPLAT.Loader.LoadAsync(splatUrl, scene, null);
 
         statusDiv.textContent = 'Use mouse to orbit \u00b7 scroll to zoom \u00b7 right-click drag to pan';
 
@@ -254,9 +231,8 @@ async function handleSharpSplatGenerate(src) {
                 }
             );
         });
-        let filename = result.filename || (filenamePrefix + '.splat');
-        sharpSplatDownloadFile(result.splatBase64, filename);
-        await sharpSplatOpenViewer(result.splatBase64, filename);
+        let filename = result.filename || 'output.splat';
+        await sharpSplatOpenViewer(result.splatUrl, filename);
     }
     catch (err) {
         console.error('SharpSplat error:', err);

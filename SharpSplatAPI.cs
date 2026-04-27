@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
+using SwarmUI.Core;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 
@@ -219,8 +220,13 @@ public static class SharpSplatAPI
             // Pick the first PLY file (one image input produces one PLY).
             string plyPath = plyFiles[0];
 
-            // Convert PLY -> .splat using ply2splat (avoids property-type issues in browser viewers).
-            string splatPath = Path.ChangeExtension(plyPath, ".splat");
+            // Convert PLY -> .splat using ply2splat and save to user output directory.
+            // Saving to output allows the browser to fetch it as a normal HTTP URL,
+            // which is what SPLAT.Loader.LoadAsync expects.
+            string splatFilename = $"{safePrefix}.splat";
+            string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+            Directory.CreateDirectory(splatsOutputDir);
+            string splatPath = Path.Combine(splatsOutputDir, splatFilename);
             string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
             ProcessStartInfo convertPsi = BuildPythonPsi();
             convertPsi.ArgumentList.Add("-s");
@@ -243,17 +249,22 @@ public static class SharpSplatAPI
                 Logs.Error($"SharpSplat: ply2splat conversion failed (exit {convertProcess.ExitCode}): {convertErrStr}");
                 return new JObject { ["success"] = false, ["error"] = $"PLY to .splat conversion failed: {convertErrStr}" };
             }
+            if (!File.Exists(splatPath))
+            {
+                Logs.Error("SharpSplat: ply2splat reported success but output file does not exist.");
+                return new JObject { ["success"] = false, ["error"] = "PLY to .splat conversion produced no output file." };
+            }
 
-            byte[] splatBytes = await File.ReadAllBytesAsync(splatPath);
-            string splatBase64 = Convert.ToBase64String(splatBytes);
-            string filename = $"{safePrefix}.splat";
-
-            Logs.Info($"SharpSplat: Successfully produced .splat '{filename}' ({splatBytes.Length} bytes).");
+            // Use /View/{userId}/... which always resolves relative to GetUserOutputRoot(userId),
+            // regardless of the AppendUserNameToOutputPath server setting.
+            string splatUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(splatFilename)}";
+            long splatBytes = new FileInfo(splatPath).Length;
+            Logs.Info($"SharpSplat: Successfully produced .splat '{splatFilename}' ({splatBytes} bytes) at {splatUrl}.");
             return new JObject
             {
                 ["success"] = true,
-                ["splatBase64"] = splatBase64,
-                ["filename"] = filename
+                ["splatUrl"] = splatUrl,
+                ["filename"] = splatFilename
             };
         }
         catch (Exception ex)
