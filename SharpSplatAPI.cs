@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using SwarmUI.Accounts;
+using SwarmUI.Builtin_ComfyUIBackend;
 using SwarmUI.Core;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
@@ -36,6 +37,7 @@ public static class SharpSplatAPI
     public static void Register()
     {
         API.RegisterAPICall(SharpGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(SharpGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
     }
 
@@ -295,6 +297,92 @@ public static class SharpSplatAPI
                 // Best-effort cleanup; temp files are cleared on next OS restart anyway.
             }
         }
+    }
+
+    /// <summary>
+    /// Generates a 3D Gaussian Splat PLY file from the provided base64-encoded image by
+    /// submitting a ComfyUI workflow containing the <c>SharpSplatGenerate</c> custom node.
+    /// This routes generation through the Comfy backend queue rather than running a
+    /// standalone Python subprocess directly.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imageBase64">Base64-encoded image data (PNG/JPG/WEBP).</param>
+    /// <param name="filenamePrefix">Optional filename prefix for the output .splat file.</param>
+    public static async Task<JObject> SharpGenerateSplatViaComfy(Session session, string imageBase64, string filenamePrefix = "output")
+    {
+        if (string.IsNullOrWhiteSpace(imageBase64))
+        {
+            return new JObject { ["success"] = false, ["error"] = "No image data provided." };
+        }
+        try
+        {
+            Convert.FromBase64String(imageBase64);
+        }
+        catch (FormatException)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
+        }
+        string safePrefix = string.Concat(
+            (filenamePrefix ?? "output")
+                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'));
+        if (string.IsNullOrWhiteSpace(safePrefix))
+        {
+            safePrefix = "output";
+        }
+        string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+        Directory.CreateDirectory(splatsOutputDir);
+        string splatFilename = $"{safePrefix}.splat";
+        string splatPath = Path.Combine(splatsOutputDir, splatFilename);
+        if (File.Exists(splatPath))
+        {
+            string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            splatFilename = $"{safePrefix}_{timestamp}.splat";
+            splatPath = Path.Combine(splatsOutputDir, splatFilename);
+        }
+        JObject workflow = new()
+        {
+            ["1"] = new JObject()
+            {
+                ["class_type"] = "SwarmLoadImageB64",
+                ["inputs"] = new JObject()
+                {
+                    ["image_base64"] = imageBase64
+                }
+            },
+            ["2"] = new JObject()
+            {
+                ["class_type"] = "SharpSplatGenerate",
+                ["inputs"] = new JObject()
+                {
+                    ["images"] = new JArray() { "1", 0 },
+                    ["output_path"] = splatPath
+                }
+            }
+        };
+        try
+        {
+            Logs.Info($"SharpSplat: Submitting Gaussian Splat generation via ComfyUI backend for '{safePrefix}'...");
+            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { });
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: ComfyUI workflow error: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = $"ComfyUI workflow failed: {ex.Message}" };
+        }
+        if (!File.Exists(splatPath))
+        {
+            Logs.Error($"SharpSplat: ComfyUI workflow completed but .splat file not found at '{splatPath}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but .splat file was not produced. Check server logs." };
+        }
+        string splatUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(splatFilename)}";
+        long splatBytes = new FileInfo(splatPath).Length;
+        Logs.Info($"SharpSplat: Successfully produced .splat via ComfyUI '{splatFilename}' ({splatBytes} bytes) at {splatUrl}.");
+        return new JObject
+        {
+            ["success"] = true,
+            ["splatUrl"] = splatUrl,
+            ["filename"] = splatFilename
+        };
     }
 
     /// <summary>

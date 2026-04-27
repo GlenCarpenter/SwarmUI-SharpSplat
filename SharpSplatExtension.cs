@@ -1,4 +1,5 @@
 using System.IO;
+using SwarmUI.Builtin_ComfyUIBackend;
 using SwarmUI.Core;
 using SwarmUI.Utils;
 
@@ -21,6 +22,8 @@ public class SharpSplatExtension : Extension
         ExtFolder = FilePath;
         ScriptFiles.Add("Assets/sharp_splat.js");
         StyleSheetFiles.Add("Assets/sharp_splat.css");
+        // Register the ComfyNodes folder so ComfyUI picks up the SharpSplatGenerate node.
+        ComfyUISelfStartBackend.CustomNodePaths.Add(Path.GetFullPath($"{FilePath}/ComfyNodes"));
     }
 
     /// <inheritdoc/>

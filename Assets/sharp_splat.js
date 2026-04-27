@@ -245,8 +245,9 @@ let sharpSplatTab = new SharpSplatTabManager();
 
 /**
  * Handles the "Generate 3D Splat" button click.
- * Sends the current image to the server, then navigates to the Splat Viewer tab
- * and auto-loads the result.
+ * Tries the ComfyUI-backed route first (SharpGenerateSplatViaComfy), which queues
+ * generation through the Comfy backend. Falls back to the direct subprocess route
+ * (SharpGenerateSplat) when no ComfyUI backend is available.
  * @param {string} src - Image URL or data-URL, as provided by registerMediaButton.
  */
 async function handleSharpSplatGenerate(src) {
@@ -273,11 +274,16 @@ async function handleSharpSplatGenerate(src) {
         }
     }
     catch (_) {}
-    try {
-        let result = await new Promise((resolve, reject) => {
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix };
+    /**
+     * Calls a given API endpoint and returns a Promise resolving to the response.
+     * @param {string} endpoint
+     */
+    function callSplatAPI(endpoint) {
+        return new Promise((resolve, reject) => {
             genericRequest(
-                'SharpGenerateSplat',
-                { imageBase64: base64Data, filenamePrefix: filenamePrefix },
+                endpoint,
+                requestParams,
                 (data) => {
                     if (data.success) {
                         resolve(data);
@@ -288,6 +294,23 @@ async function handleSharpSplatGenerate(src) {
                 }
             );
         });
+    }
+    try {
+        let result;
+        try {
+            // Preferred path: submit generation through the ComfyUI backend queue.
+            result = await callSplatAPI('SharpGenerateSplatViaComfy');
+        }
+        catch (comfyErr) {
+            // Fall back to the direct subprocess path when no ComfyUI backend is running.
+            if (comfyErr.message && comfyErr.message.includes('No available ComfyUI Backend')) {
+                console.warn('SharpSplat: No ComfyUI backend available, falling back to direct generation.');
+                result = await callSplatAPI('SharpGenerateSplat');
+            }
+            else {
+                throw comfyErr;
+            }
+        }
         let filename = result.filename || 'output.splat';
         // Navigate to the tab (triggers refreshList + initViewer via the click handler),
         // then load the newly generated splat into the viewer.
