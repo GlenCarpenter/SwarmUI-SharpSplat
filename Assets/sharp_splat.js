@@ -151,7 +151,7 @@ class SharpSplatTabManager {
      * @param {HTMLElement} rowElem - The sidebar row element to remove on success.
      */
     async deleteSplat(filename, rowElem) {
-        if (!confirm('Delete ' + filename + '?\nThis cannot be undone.')) {
+        if (!uiImprover.lastShift && getUserSetting('ui.checkifsurebeforedelete', true) && !confirm('Are you sure you want to delete ' + filename + '?\nHold shift to bypass.')) {
             return;
         }
         try {
