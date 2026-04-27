@@ -43,6 +43,8 @@ Splat Viewer tab (browser)
 
 Previously generated splats are listed in the sidebar and can be reloaded at any time.
 
+<video src=".github/splat.mp4" controls width="100%"></video>
+
 ---
 
 ## Requirements
