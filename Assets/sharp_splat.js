@@ -9,8 +9,8 @@
 
 'use strict';
 
-/** CDN URL for gsplat.js (ES module). */
-let sharpSplatGsplatUrl = 'https://cdn.jsdelivr.net/npm/gsplat@latest/dist/index.js';
+/** CDN URL for gsplat.js (ES module). Pinned to a specific version for stability. */
+let sharpSplatGsplatUrl = 'https://cdn.jsdelivr.net/npm/gsplat@1.2.9/dist/index.es.js';
 
 /**
  * Fetches an image from a src URL (or data-URL) as a base64-encoded string.
@@ -164,7 +164,6 @@ class SharpSplatTabManager {
         canvas.width = wrap.clientWidth || 800;
         canvas.height = wrap.clientHeight || 600;
         this._renderer = new SPLAT.WebGLRenderer(canvas);
-        this._scene = new SPLAT.Scene();
         this._camera = new SPLAT.Camera();
         this._controls = new SPLAT.OrbitControls(this._camera, canvas);
         this._resizeObserver = new ResizeObserver(() => {
@@ -172,17 +171,10 @@ class SharpSplatTabManager {
             canvas.height = wrap.clientHeight;
         });
         this._resizeObserver.observe(wrap);
-        this._running = true;
-        let self = this;
-        function frame() {
-            if (!self._running) {
-                return;
-            }
-            self._controls.update();
-            self._renderer.render(self._scene, self._camera);
-            self._rafId = requestAnimationFrame(frame);
-        }
-        self._rafId = requestAnimationFrame(frame);
+        // Note: render loop is NOT started here.
+        // It is started (and stopped between loads) inside loadSplat(),
+        // so that the loop only runs after LoadAsync resolves and the
+        // WebAssembly module is fully initialised.
     }
 
     /**
@@ -199,6 +191,17 @@ class SharpSplatTabManager {
         if (status) {
             status.textContent = 'Loading ' + filename + '\u2026';
         }
+
+        // Stop any running render loop before touching the scene.
+        // This prevents the worker from receiving render commands while
+        // its WebAssembly module may still be initialising, which causes
+        // "Cannot read properties of undefined (reading 'set')" at RenderData.ts:208.
+        this._running = false;
+        if (this._rafId !== null) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+
         try {
             await this.initViewer();
             let SPLAT = this._gsplat;
@@ -209,6 +212,21 @@ class SharpSplatTabManager {
                     status.textContent = 'Loading ' + filename + '\u2026 ' + Math.round(progress * 100) + '%';
                 }
             });
+
+            // WASM is now fully initialised (LoadAsync awaited multiple async steps).
+            // Start the render loop.
+            this._running = true;
+            let self = this;
+            function frame() {
+                if (!self._running) {
+                    return;
+                }
+                self._controls.update();
+                self._renderer.render(self._scene, self._camera);
+                self._rafId = requestAnimationFrame(frame);
+            }
+            self._rafId = requestAnimationFrame(frame);
+
             if (this._currentUrl === url && status) {
                 status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
             }
