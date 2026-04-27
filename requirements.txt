@@ -4,3 +4,7 @@
 # Note: torch and torchvision are already provided by the ComfyUI backend
 # environment and do not need to be reinstalled here.
 git+https://github.com/apple/ml-sharp.git
+
+# ply2splat: Converts Gaussian Splat PLY files to the compact .splat binary format.
+# https://github.com/bastikohn/ply2splat
+ply2splat

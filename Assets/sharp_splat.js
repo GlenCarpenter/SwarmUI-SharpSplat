@@ -59,35 +59,6 @@ function sharpSplatDownloadFile(base64Data, filename) {
 }
 
 /**
- * Patches a PLY ArrayBuffer to replace property types that gsplat.js cannot read.
- * gsplat.js knows the byte sizes of 'uint', 'double', etc. but its value-reading
- * switch only handles 'float' and 'int', throwing on everything else.
- * 'uint' -> 'int': same 4-byte size, no binary data change required.
- * The PLY header is always ASCII, so character offsets == byte offsets.
- */
-function sharpSplatPatchPlyBuffer(arrayBuffer) {
-    let bytes = new Uint8Array(arrayBuffer);
-    let endMarker = 'end_header\n';
-    let headerSample = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 8192)));
-    let endIdx = headerSample.indexOf(endMarker);
-    if (endIdx < 0) {
-        return arrayBuffer;
-    }
-    let headerText = headerSample.slice(0, endIdx + endMarker.length);
-    let patchedHeader = headerText.replace(/property uint /g, 'property int  ');
-    if (patchedHeader === headerText) {
-        return arrayBuffer;
-    }
-    let encodedHeader = new TextEncoder().encode(patchedHeader);
-    let bodyBytes = bytes.slice(endIdx + endMarker.length);
-    let newBuffer = new ArrayBuffer(encodedHeader.length + bodyBytes.length);
-    let view = new Uint8Array(newBuffer);
-    view.set(encodedHeader, 0);
-    view.set(bodyBytes, encodedHeader.length);
-    return newBuffer;
-}
-
-/**
  * Decodes a base64 string into an ArrayBuffer.
  */
 function sharpSplatBase64ToArrayBuffer(base64) {
@@ -102,11 +73,11 @@ function sharpSplatBase64ToArrayBuffer(base64) {
 
 /**
  * Opens the in-browser 3D Gaussian Splat viewer in a fullscreen overlay.
- * Loads gsplat.js from CDN on first call, then renders the .ply data.
- * @param {string} plyBase64 - Base64-encoded .ply file data.
+ * Loads gsplat.js from CDN on first call, then renders the .splat data.
+ * @param {string} splatBase64 - Base64-encoded .splat file data.
  * @param {string} filename - Filename shown in the viewer title.
  */
-async function sharpSplatOpenViewer(plyBase64, filename) {
+async function sharpSplatOpenViewer(splatBase64, filename) {
     // Remove any existing viewer.
     let existing = document.getElementById('sharp_splat_viewer_overlay');
     if (existing) {
@@ -131,8 +102,8 @@ async function sharpSplatOpenViewer(plyBase64, filename) {
 
     let downloadBtn = document.createElement('button');
     downloadBtn.className = 'basic-button';
-    downloadBtn.textContent = 'Download PLY';
-    downloadBtn.onclick = () => sharpSplatDownloadFile(plyBase64, filename);
+    downloadBtn.textContent = 'Download Splat';
+    downloadBtn.onclick = () => sharpSplatDownloadFile(splatBase64, filename);
 
     let closeBtn = document.createElement('button');
     closeBtn.className = 'basic-button';
@@ -200,9 +171,9 @@ async function sharpSplatOpenViewer(plyBase64, filename) {
         let camera = new SPLAT.Camera();
         controls = new SPLAT.OrbitControls(camera, canvas);
 
-        // Load PLY from ArrayBuffer, patching unsupported header types first.
-        let arrayBuffer = sharpSplatPatchPlyBuffer(sharpSplatBase64ToArrayBuffer(plyBase64));
-        SPLAT.PLYLoader.LoadFromArrayBuffer(arrayBuffer, scene);
+        // Load .splat from ArrayBuffer using the raw binary loader (no PLY type parsing).
+        let arrayBuffer = sharpSplatBase64ToArrayBuffer(splatBase64);
+        SPLAT.Loader.LoadFromArrayBuffer(arrayBuffer, scene);
 
         statusDiv.textContent = 'Use mouse to orbit \u00b7 scroll to zoom \u00b7 right-click drag to pan';
 
@@ -257,11 +228,22 @@ async function handleSharpSplatGenerate(src) {
         showError('SharpSplat: No image available. Generate an image first.');
         return;
     }
+    // Derive a filename prefix from the source URL (strip path and extension).
+    let filenamePrefix = 'output';
+    try {
+        let urlPath = src.startsWith('data:') ? '' : new URL(src, window.location.href).pathname;
+        if (urlPath) {
+            let base = urlPath.split('/').pop();
+            let dot = base.lastIndexOf('.');
+            filenamePrefix = dot > 0 ? base.slice(0, dot) : base;
+        }
+    }
+    catch (_) {}
     try {
         let result = await new Promise((resolve, reject) => {
             genericRequest(
                 'SharpGenerateSplat',
-                { imageBase64: base64Data },
+                { imageBase64: base64Data, filenamePrefix: filenamePrefix },
                 (data) => {
                     if (data.success) {
                         resolve(data);
@@ -272,9 +254,9 @@ async function handleSharpSplatGenerate(src) {
                 }
             );
         });
-        let filename = result.filename || 'output.ply';
-        sharpSplatDownloadFile(result.plyBase64, filename);
-        await sharpSplatOpenViewer(result.plyBase64, filename);
+        let filename = result.filename || (filenamePrefix + '.splat');
+        sharpSplatDownloadFile(result.splatBase64, filename);
+        await sharpSplatOpenViewer(result.splatBase64, filename);
     }
     catch (err) {
         console.error('SharpSplat error:', err);
@@ -295,7 +277,7 @@ async function handleSharpSplatGenerate(src) {
         registerMediaButton(
             'Generate 3D Splat',
             (src) => handleSharpSplatGenerate(src),
-            'Generate a 3D Gaussian Splat (.ply) from this image using ml-sharp',
+            'Generate a 3D Gaussian Splat (.splat) from this image using ml-sharp',
             ['image'],
             true,
             true
