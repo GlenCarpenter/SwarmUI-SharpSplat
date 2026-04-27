@@ -362,6 +362,7 @@ public static class SharpSplatAPI
         try
         {
             Logs.Info($"SharpSplat: Submitting Gaussian Splat generation via ComfyUI backend for '{safePrefix}'...");
+            using Session.GenClaim claim = session.Claim(liveGens: 1);
             await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { });
         }
         catch (Exception ex)

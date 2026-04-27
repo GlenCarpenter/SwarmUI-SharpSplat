@@ -299,7 +299,15 @@ async function handleSharpSplatGenerate(src) {
         let result;
         try {
             // Preferred path: submit generation through the ComfyUI backend queue.
-            result = await callSplatAPI('SharpGenerateSplatViaComfy');
+            let comfyPromise = callSplatAPI('SharpGenerateSplatViaComfy');
+            // Force the status bar to poll the server so the generation counter appears.
+            // The normal polling interval can be up to 60 s when backends are idle, so we
+            // nudge it immediately after starting the request (the server-side GenClaim will
+            // already be active within a few milliseconds).
+            if (typeof updateGenCount === 'function') {
+                updateGenCount();
+            }
+            result = await comfyPromise;
         }
         catch (comfyErr) {
             // Fall back to the direct subprocess path when no ComfyUI backend is running.
@@ -310,6 +318,10 @@ async function handleSharpSplatGenerate(src) {
             else {
                 throw comfyErr;
             }
+        }
+        // Force another poll now that the generation is complete so the counter clears promptly.
+        if (typeof updateGenCount === 'function') {
+            updateGenCount();
         }
         let filename = result.filename || 'output.splat';
         // Navigate to the tab (triggers refreshList + initViewer via the click handler),
