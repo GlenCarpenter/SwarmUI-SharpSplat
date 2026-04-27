@@ -374,6 +374,11 @@ async function handleSharpSplatGenerate(src) {
 // Wire up UI and register the image viewer button once the page is ready.
 setTimeout(() => {
     sharpSplatTab.setupUI();
+    if (typeof promptTabComplete !== 'undefined') {
+        promptTabComplete.registerPrefix('sharpsplat', 'Automatically generate a 3D Gaussian Splat after this image is generated.', () => [
+            '\nAdd "<sharpsplat>" anywhere in your prompt to auto-generate a .splat file from the output image.'
+        ], true);
+    }
     if (typeof registerMediaButton !== 'function') {
         console.warn('SharpSplat: registerMediaButton is not available \u2014 SwarmUI version may be too old');
         return;
