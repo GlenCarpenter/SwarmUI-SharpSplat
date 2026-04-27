@@ -36,6 +36,7 @@ public static class SharpSplatAPI
     public static void Register()
     {
         API.RegisterAPICall(SharpGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
     }
 
     /// <summary>Guards one-time dependency installation per process lifetime.</summary>
@@ -274,6 +275,8 @@ public static class SharpSplatAPI
         }
         finally
         {
+            // Note: splatPath is inside splatsOutputDir (user Output), intentionally kept.
+            // tempRoot contains only the PLY and input image — safe to delete.
             try
             {
                 if (Directory.Exists(tempRoot))
@@ -286,5 +289,33 @@ public static class SharpSplatAPI
                 // Best-effort cleanup; temp files are cleared on next OS restart anyway.
             }
         }
+    }
+
+    /// <summary>
+    /// Returns a list of .splat files previously generated for this user,
+    /// ordered newest-first, for display in the Splat Viewer tab sidebar.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    public static Task<JObject> SharpListSplats(Session session)
+    {
+        string splatsDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+        if (!Directory.Exists(splatsDir))
+        {
+            return Task.FromResult(new JObject { ["success"] = true, ["splats"] = new JArray() });
+        }
+        string[] files = Directory.GetFiles(splatsDir, "*.splat")
+            .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+            .ToArray();
+        JArray arr = new();
+        foreach (string f in files)
+        {
+            string fn = Path.GetFileName(f);
+            arr.Add(new JObject
+            {
+                ["filename"] = fn,
+                ["url"] = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(fn)}"
+            });
+        }
+        return Task.FromResult(new JObject { ["success"] = true, ["splats"] = arr });
     }
 }

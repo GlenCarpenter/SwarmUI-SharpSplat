@@ -20,6 +20,7 @@ public class SharpSplatExtension : Extension
     {
         ExtFolder = FilePath;
         ScriptFiles.Add("Assets/sharp_splat.js");
+        StyleSheetFiles.Add("Assets/sharp_splat.css");
     }
 
     /// <inheritdoc/>
