@@ -88,6 +88,21 @@ git clone https://github.com/your-org/SwarmUI-SharpSplat
 3. Wait for inference (30–120 seconds depending on GPU).
 4. The **Splat Viewer** tab opens automatically with the result loaded.
 
+### Automatic generation with the `<sharpsplat>` prompt tag
+
+Add `<sharpsplat>` anywhere in your prompt to automatically generate a `.splat` file from every image produced by that generation, without clicking the button manually.
+
+```
+a photo of a red apple on a wooden table <sharpsplat>
+```
+
+- The tag is stripped from the prompt before it reaches the model — it has no effect on image content.
+- Splat generation runs as a node inside the same ComfyUI job as the image, so each image waits for its splat to finish before the next image begins.
+- Batch generations produce one `.splat` per image.
+- Generated splats appear in the **Splat Viewer** sidebar as usual.
+
+The tag is available in the prompt autocomplete — type `<sharpsplat` to see it suggested.
+
 ### Viewing previous splats
 
 1. Click the **Splat Viewer** top-level tab.
