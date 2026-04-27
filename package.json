@@ -1,0 +1,21 @@
+{
+    "name": "swarmui-sharpsplat",
+    "version": "1.0.0",
+    "private": true,
+    "description": "SwarmUI SharpSplat extension — npm build for splat viewer bundle",
+    "type": "module",
+    "scripts": {
+        "build": "rollup -c",
+        "release": "rollup -c rollup.release.config.js",
+        "postinstall": "npm run build"
+    },
+    "dependencies": {
+        "@mkkellogg/gaussian-splats-3d": "0.4.7",
+        "three": "0.170.0"
+    },
+    "devDependencies": {
+        "@rollup/plugin-node-resolve": "^15.2.3",
+        "@rollup/plugin-terser": "^0.4.4",
+        "rollup": "^4.18.0"
+    }
+}

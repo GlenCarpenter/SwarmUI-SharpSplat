@@ -123,9 +123,11 @@
     flex: 1;
     overflow: hidden;
     position: relative;
+    width: 100%;
+    height: 100%;
 }
 
-#sharpsplat_canvas {
+.sharpsplat-canvas-wrap canvas {
     display: block;
     width: 100%;
     height: 100%;

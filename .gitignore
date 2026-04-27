@@ -15,6 +15,9 @@ __pycache__/
 .venv/
 venv/
 
+# Node.js
+node_modules/
+
 # Models / large files (if downloaded locally)
 *.onnx
 *.safetensors

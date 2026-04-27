@@ -5,12 +5,15 @@
  * On click, sends the current image to the server, runs `sharp predict`,
  * converts the output to .splat format, then navigates to the dedicated
  * Splat Viewer tab and loads the result.
+ *
+ * Viewer: uses @mkkellogg/gaussian-splats-3d bundled locally via npm + rollup.
+ * Run `npm install` in the extension folder to build Assets/splat-viewer.bundle.js.
  */
 
 'use strict';
 
-/** CDN URL for gsplat.js (ES module). Pinned to a specific version for stability. */
-let sharpSplatGsplatUrl = 'https://cdn.jsdelivr.net/npm/gsplat@1.2.9/dist/index.es.js';
+/** Serves the locally-built GaussianSplats3D ES module bundle. */
+let sharpSplatBundleUrl = '/ExtensionFile/SharpSplatExtension/Assets/splat-viewer.bundle.js';
 
 /**
  * Fetches an image from a src URL (or data-URL) as a base64-encoded string.
@@ -40,24 +43,10 @@ async function sharpSplatGetImageBase64(src) {
  */
 class SharpSplatTabManager {
     constructor() {
-        /** @type {Object|null} Cached gsplat.js ES module. */
-        this._gsplat = null;
-        /** @type {Promise|null} Resolves when the WebGL viewer is ready. */
-        this._initPromise = null;
-        /** @type {Object|null} gsplat WebGL renderer. */
-        this._renderer = null;
-        /** @type {Object|null} Current gsplat Scene. */
-        this._scene = null;
-        /** @type {Object|null} gsplat Camera. */
-        this._camera = null;
-        /** @type {Object|null} gsplat OrbitControls. */
-        this._controls = null;
-        /** @type {number|null} requestAnimationFrame handle for the render loop. */
-        this._rafId = null;
-        /** @type {boolean} Whether the render loop is running. */
-        this._running = false;
-        /** @type {ResizeObserver|null} Watches canvas-wrap for size changes. */
-        this._resizeObserver = null;
+        /** @type {Promise|null} Cached import() promise for the viewer bundle. */
+        this._modulePromise = null;
+        /** @type {Object|null} Active GaussianSplats3D.Viewer instance. */
+        this._viewer = null;
         /** @type {string|null} URL of the currently loaded splat. */
         this._currentUrl = null;
         /** @type {boolean} Whether DOM event handlers have been wired up. */
@@ -81,7 +70,8 @@ class SharpSplatTabManager {
         if (tabBtn) {
             tabBtn.addEventListener('click', () => {
                 this.refreshList();
-                this.initViewer();
+                // Pre-warm the module import so the viewer is ready when a splat is clicked.
+                this._loadModule();
             });
         }
     }
@@ -175,9 +165,17 @@ class SharpSplatTabManager {
                     }
                 });
             });
-            // If the deleted splat was loaded in the viewer, clear the status bar.
+            // If the deleted splat was loaded in the viewer, dispose and clear it.
             if (this._currentUrl && this._currentUrl.includes(encodeURIComponent(filename))) {
                 this._currentUrl = null;
+                if (this._viewer) {
+                    this._viewer.dispose();
+                    this._viewer = null;
+                }
+                let wrap = document.getElementById('sharpsplat_canvas_wrap');
+                if (wrap) {
+                    wrap.innerHTML = '';
+                }
                 let status = document.getElementById('sharpsplat_status');
                 if (status) {
                     status.textContent = 'Select a splat from the list, or click \u201cGenerate 3D Splat\u201d on an image in the Generate tab.';
@@ -196,47 +194,19 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Initialises the WebGL renderer, scene, camera, and controls once.
-     * Returns a Promise that resolves when initialisation is complete.
-     * Subsequent calls return the same promise.
+     * Loads the GaussianSplats3D ES module bundle, caching the result.
+     * Returns a Promise resolving to the module namespace object.
      */
-    initViewer() {
-        if (this._initPromise) {
-            return this._initPromise;
+    _loadModule() {
+        if (!this._modulePromise) {
+            this._modulePromise = import(sharpSplatBundleUrl);
         }
-        this._initPromise = this._doInitViewer();
-        return this._initPromise;
-    }
-
-    /** @private */
-    async _doInitViewer() {
-        let canvas = document.getElementById('sharpsplat_canvas');
-        let wrap = document.getElementById('sharpsplat_canvas_wrap');
-        if (!canvas || !wrap) {
-            throw new Error('Viewer canvas not found in DOM.');
-        }
-        if (!this._gsplat) {
-            this._gsplat = await import(sharpSplatGsplatUrl);
-        }
-        let SPLAT = this._gsplat;
-        canvas.width = wrap.clientWidth || 800;
-        canvas.height = wrap.clientHeight || 600;
-        this._renderer = new SPLAT.WebGLRenderer(canvas);
-        this._camera = new SPLAT.Camera();
-        this._controls = new SPLAT.OrbitControls(this._camera, canvas);
-        this._resizeObserver = new ResizeObserver(() => {
-            canvas.width = wrap.clientWidth;
-            canvas.height = wrap.clientHeight;
-        });
-        this._resizeObserver.observe(wrap);
-        // Note: render loop is NOT started here.
-        // It is started (and stopped between loads) inside loadSplat(),
-        // so that the loop only runs after LoadAsync resolves and the
-        // WebAssembly module is fully initialised.
+        return this._modulePromise;
     }
 
     /**
      * Loads a .splat file into the viewer by HTTP URL.
+     * Disposes any previously active viewer instance before creating a new one.
      * @param {string} url - URL of the .splat file (e.g. /View/...).
      * @param {string} filename - Display name shown in the status bar.
      */
@@ -250,42 +220,35 @@ class SharpSplatTabManager {
         if (status) {
             status.textContent = 'Loading ' + filename + '\u2026';
         }
-
-        // Stop any running render loop before touching the scene.
-        // This prevents the worker from receiving render commands while
-        // its WebAssembly module may still be initialising, which causes
-        // "Cannot read properties of undefined (reading 'set')" at RenderData.ts:208.
-        this._running = false;
-        if (this._rafId !== null) {
-            cancelAnimationFrame(this._rafId);
-            this._rafId = null;
+        // Dispose previous viewer before mounting a new one.
+        if (this._viewer) {
+            this._viewer.dispose();
+            this._viewer = null;
         }
-
+        let wrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (wrap) {
+            wrap.innerHTML = '';
+        }
         try {
-            await this.initViewer();
-            let SPLAT = this._gsplat;
-            // Replace the scene to discard the previously loaded splat.
-            this._scene = new SPLAT.Scene();
-            await SPLAT.Loader.LoadAsync(url, this._scene, (progress) => {
-                if (status && this._currentUrl === url && progress >= 0 && progress < 1) {
-                    status.textContent = 'Loading ' + filename + '\u2026 ' + Math.round(progress * 100) + '%';
-                }
+            let GS3D = await this._loadModule();
+            let renderWidth = (wrap && wrap.clientWidth) || 800;
+            let renderHeight = (wrap && wrap.clientHeight) || 600;
+            this._viewer = new GS3D.Viewer({
+                'rootElement': wrap,
+                'cameraUp': [0, -1, 0],
+                'renderWidth': renderWidth,
+                'renderHeight': renderHeight,
+                'sharedMemoryForWorkers': false,
+                'gpuAcceleratedSort': false,
+                'sceneRevealMode': GS3D.SceneRevealMode.Instant,
+                'logLevel': GS3D.LogLevel.None,
             });
-
-            // WASM is now fully initialised (LoadAsync awaited multiple async steps).
-            // Start the render loop.
-            this._running = true;
-            let self = this;
-            function frame() {
-                if (!self._running) {
-                    return;
-                }
-                self._controls.update();
-                self._renderer.render(self._scene, self._camera);
-                self._rafId = requestAnimationFrame(frame);
-            }
-            self._rafId = requestAnimationFrame(frame);
-
+            await this._viewer.addSplatScene(url, {
+                'splatAlphaRemovalThreshold': 5,
+                'showLoadingUI': false,
+                'rotation': [0, 1, 0, 0],
+            });
+            this._viewer.start();
             if (this._currentUrl === url && status) {
                 status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
             }
