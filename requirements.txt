@@ -1,0 +1,6 @@
+# ml-sharp: Monocular 3D Gaussian Splat generation from a single image.
+# https://github.com/apple/ml-sharp
+#
+# Note: torch and torchvision are already provided by the ComfyUI backend
+# environment and do not need to be reinstalled here.
+git+https://github.com/apple/ml-sharp.git
