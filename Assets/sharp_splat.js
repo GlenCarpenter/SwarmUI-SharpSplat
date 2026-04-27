@@ -65,12 +65,11 @@ class SharpSplatTabManager {
         if (refreshBtn) {
             refreshBtn.onclick = () => this.refreshList();
         }
-        // When the tab is activated, refresh the file list and pre-warm the viewer.
+        // When the tab is activated, refresh the file list and pre-warm the viewer bundle.
         let tabBtn = document.getElementById('maintab_splatviewer');
         if (tabBtn) {
             tabBtn.addEventListener('click', () => {
                 this.refreshList();
-                // Pre-warm the module import so the viewer is ready when a splat is clicked.
                 this._loadModule();
             });
         }
@@ -242,6 +241,7 @@ class SharpSplatTabManager {
                 'gpuAcceleratedSort': false,
                 'sceneRevealMode': GS3D.SceneRevealMode.Instant,
                 'logLevel': GS3D.LogLevel.None,
+                'useBuiltInControls': false,
             });
             await this._viewer.addSplatScene(url, {
                 'splatAlphaRemovalThreshold': 5,
@@ -249,6 +249,20 @@ class SharpSplatTabManager {
                 'rotation': [0, 1, 0, 0],
             });
             this._viewer.start();
+            // Wire up OrbitControls manually so key events are scoped to the canvas
+            // wrapper element instead of the global window. This prevents the viewer
+            // from intercepting keystrokes on other SwarmUI tabs.
+            wrap.tabIndex = -1;
+            let orbitControls = new GS3D.OrbitControls(this._viewer.camera, this._viewer.renderer.domElement);
+            orbitControls.rotateSpeed = 0.5;
+            orbitControls.maxPolarAngle = Math.PI * 0.75;
+            orbitControls.minPolarAngle = 0.1;
+            orbitControls.enableDamping = true;
+            orbitControls.dampingFactor = 0.05;
+            orbitControls.listenToKeyEvents(wrap);
+            orbitControls.update();
+            // Assign to viewer.controls so the viewer's render loop calls update() each frame.
+            this._viewer.controls = orbitControls;
             if (this._currentUrl === url && status) {
                 status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
             }
