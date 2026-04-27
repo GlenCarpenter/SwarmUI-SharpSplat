@@ -1,6 +1,6 @@
 # SwarmUI-SharpSplat
 
-A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns any generated image into a 3D Gaussian Splat — directly inside the browser.
+A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns any generated image into a 3D Gaussian Splat directly inside the browser.
 
 It uses Apple's [ml-sharp](https://github.com/apple/ml-sharp) to reconstruct a 3D scene from a single image, converts the output to the compact `.splat` format, and renders it interactively in a dedicated **Splat Viewer** tab powered by [gsplat.js](https://github.com/huggingface/gsplat.js).
 
@@ -48,7 +48,7 @@ Previously generated splats are listed in the sidebar and can be reloaded at any
 ## Requirements
 
 - SwarmUI with a working ComfyUI backend (provides the Python environment).
-- An NVIDIA GPU is strongly recommended — ml-sharp uses PyTorch for inference.
+- An NVIDIA GPU is strongly recommended. `ml-sharp` uses PyTorch for inference.
 - Internet access on first use to install Python dependencies and load gsplat.js from CDN.
 
 Python dependencies are installed automatically the first time you click **Generate 3D Splat**:
