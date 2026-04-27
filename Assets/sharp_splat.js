@@ -123,17 +123,75 @@ class SharpSplatTabManager {
             }
             listDiv.innerHTML = '';
             for (let splat of splats) {
-                let btn = document.createElement('button');
-                btn.className = 'sharpsplat-file-entry' + (splat.url === this._currentUrl ? ' active' : '');
-                btn.textContent = splat.filename;
-                btn.title = splat.filename;
-                btn.dataset.url = splat.url;
-                btn.onclick = () => this.loadSplat(splat.url, splat.filename);
-                listDiv.appendChild(btn);
+                let row = createDiv(null, 'sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
+                // Name button — loads the splat into the viewer.
+                let nameBtn = document.createElement('button');
+                nameBtn.className = 'sharpsplat-file-entry';
+                nameBtn.textContent = splat.filename;
+                nameBtn.title = splat.filename;
+                nameBtn.dataset.url = splat.url;
+                nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename);
+                // Download button — triggers a browser file download.
+                let dlBtn = document.createElement('a');
+                dlBtn.className = 'sharpsplat-icon-btn';
+                dlBtn.title = 'Download ' + splat.filename;
+                dlBtn.href = splat.url;
+                dlBtn.download = splat.filename;
+                dlBtn.innerHTML = '&#8615;';
+                // Delete button — removes the file after confirmation.
+                let delBtn = document.createElement('button');
+                delBtn.className = 'sharpsplat-icon-btn sharpsplat-delete-btn';
+                delBtn.title = 'Delete ' + splat.filename;
+                delBtn.innerHTML = '&#x1F5D1;';
+                delBtn.onclick = () => this.deleteSplat(splat.filename, row);
+                row.appendChild(nameBtn);
+                row.appendChild(dlBtn);
+                row.appendChild(delBtn);
+                listDiv.appendChild(row);
             }
         }
         catch (err) {
             listDiv.innerHTML = '<span class="sharpsplat-hint" style="color:#c66;">Error: ' + escapeHtml(err.message) + '</span>';
+        }
+    }
+
+    /**
+     * Deletes a splat file after a confirmation prompt.
+     * @param {string} filename - Bare filename of the splat to delete.
+     * @param {HTMLElement} rowElem - The sidebar row element to remove on success.
+     */
+    async deleteSplat(filename, rowElem) {
+        if (!confirm('Delete ' + filename + '?\nThis cannot be undone.')) {
+            return;
+        }
+        try {
+            await new Promise((resolve, reject) => {
+                genericRequest('SharpDeleteSplat', { filename: filename }, (data) => {
+                    if (data.success) {
+                        resolve();
+                    }
+                    else {
+                        reject(new Error(data.error || 'Delete failed.'));
+                    }
+                });
+            });
+            // If the deleted splat was loaded in the viewer, clear the status bar.
+            if (this._currentUrl && this._currentUrl.includes(encodeURIComponent(filename))) {
+                this._currentUrl = null;
+                let status = document.getElementById('sharpsplat_status');
+                if (status) {
+                    status.textContent = 'Select a splat from the list, or click \u201cGenerate 3D Splat\u201d on an image in the Generate tab.';
+                }
+            }
+            rowElem.remove();
+            // Show hint if the list is now empty.
+            let listDiv = document.getElementById('sharpsplat_file_list');
+            if (listDiv && listDiv.children.length === 0) {
+                listDiv.innerHTML = '<span class="sharpsplat-hint">No splats generated yet.</span>';
+            }
+        }
+        catch (err) {
+            showError('SharpSplat: ' + err.message);
         }
     }
 
@@ -185,8 +243,9 @@ class SharpSplatTabManager {
     async loadSplat(url, filename) {
         let status = document.getElementById('sharpsplat_status');
         this._currentUrl = url;
-        for (let btn of document.querySelectorAll('.sharpsplat-file-entry')) {
-            btn.classList.toggle('active', btn.dataset.url === url);
+        for (let row of document.querySelectorAll('.sharpsplat-file-row')) {
+            let nameBtn = row.querySelector('.sharpsplat-file-entry');
+            row.classList.toggle('active', nameBtn && nameBtn.dataset.url === url);
         }
         if (status) {
             status.textContent = 'Loading ' + filename + '\u2026';

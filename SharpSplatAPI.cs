@@ -39,6 +39,7 @@ public static class SharpSplatAPI
         API.RegisterAPICall(SharpGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(SharpDeleteSplat, true, SharpSplatPermissions.PermGenerateSplat);
     }
 
     /// <summary>Guards one-time dependency installation per process lifetime.</summary>
@@ -412,5 +413,36 @@ public static class SharpSplatAPI
             });
         }
         return Task.FromResult(new JObject { ["success"] = true, ["splats"] = arr });
+    }
+
+    /// <summary>
+    /// Deletes a previously generated .splat file for this user.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="filename">The filename (basename only, no path) of the .splat file to delete.</param>
+    public static Task<JObject> SharpDeleteSplat(Session session, string filename)
+    {
+        // Accept only a safe bare filename — no path separators or traversal sequences.
+        string safeFilename = string.Concat(
+            (filename ?? "")
+                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ' '));
+        if (string.IsNullOrWhiteSpace(safeFilename) || !safeFilename.EndsWith(".splat", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new JObject { ["success"] = false, ["error"] = "Invalid filename." });
+        }
+        string splatsDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+        string splatPath = Path.Combine(splatsDir, safeFilename);
+        // Confirm the resolved path is still inside the user's splats directory.
+        if (!Path.GetFullPath(splatPath).StartsWith(Path.GetFullPath(splatsDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(new JObject { ["success"] = false, ["error"] = "Invalid filename." });
+        }
+        if (!File.Exists(splatPath))
+        {
+            return Task.FromResult(new JObject { ["success"] = false, ["error"] = "File not found." });
+        }
+        File.Delete(splatPath);
+        Logs.Info($"SharpSplat: Deleted splat '{safeFilename}' for user '{session.User.UserID}'.");
+        return Task.FromResult(new JObject { ["success"] = true });
     }
 }
