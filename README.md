@@ -98,3 +98,15 @@ git clone https://github.com/your-org/SwarmUI-SharpSplat
 | Orbit | Left-click + drag |
 | Zoom | Scroll wheel |
 | Pan | Right-click + drag |
+
+
+---
+
+### Roadmap
+
+- Export frame from splat
+  - Send to edit
+  - Download
+  - Crop
+- Support `.ply`
+  - Export to `.splat` (currently converting in pipeline)
