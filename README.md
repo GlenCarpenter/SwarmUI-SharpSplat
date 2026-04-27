@@ -98,22 +98,3 @@ git clone https://github.com/your-org/SwarmUI-SharpSplat
 | Orbit | Left-click + drag |
 | Zoom | Scroll wheel |
 | Pan | Right-click + drag |
-
----
-
-## File Layout
-
-```
-SwarmUI-SharpSplat/
-├── Assets/
-│   ├── sharp_splat.js       # Frontend: tab manager, viewer, image button
-│   └── sharp_splat.css      # Styles for the Splat Viewer tab
-├── Tabs/
-│   └── Text2Image/
-│       └── Splat Viewer.html  # Tab HTML (auto-registered by SwarmUI)
-├── requirements.txt         # Python dependencies (auto-installed)
-├── run_sharp.py             # Thin wrapper for ml-sharp CLI
-├── run_convert.py           # Thin wrapper for ply2splat
-├── SharpSplatAPI.cs         # C# API: SharpGenerateSplat, SharpListSplats
-└── SharpSplatExtension.cs   # C# extension entry point
-```
