@@ -16,15 +16,15 @@ let sharpSplatGsplatUrl = 'https://cdn.jsdelivr.net/npm/gsplat@latest/dist/index
 let sharpSplatGsplatModule = null;
 
 /**
- * Fetches the current image as a base64-encoded PNG string.
+ * Fetches an image from a src URL (or data-URL) as a base64-encoded string.
  * Returns null if no image is available.
+ * @param {string} src - Image URL or data-URL passed by registerMediaButton.
  */
-async function sharpSplatGetCurrentImageBase64() {
-    let imgElem = document.getElementById('current_image_img');
-    if (!imgElem || !imgElem.src) {
-        return null;
+async function sharpSplatGetImageBase64(src) {
+    if (src.startsWith('data:')) {
+        let b64 = src.split(',')[1];
+        return b64 || null;
     }
-    let src = imgElem.dataset.src || imgElem.src;
     let fetchResponse = await fetch(src);
     let blob = await fetchResponse.blob();
     return new Promise((resolve, reject) => {
@@ -56,6 +56,35 @@ function sharpSplatDownloadFile(base64Data, filename) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+/**
+ * Patches a PLY ArrayBuffer to replace property types that gsplat.js cannot read.
+ * gsplat.js knows the byte sizes of 'uint', 'double', etc. but its value-reading
+ * switch only handles 'float' and 'int', throwing on everything else.
+ * 'uint' -> 'int': same 4-byte size, no binary data change required.
+ * The PLY header is always ASCII, so character offsets == byte offsets.
+ */
+function sharpSplatPatchPlyBuffer(arrayBuffer) {
+    let bytes = new Uint8Array(arrayBuffer);
+    let endMarker = 'end_header\n';
+    let headerSample = new TextDecoder().decode(bytes.slice(0, Math.min(bytes.length, 8192)));
+    let endIdx = headerSample.indexOf(endMarker);
+    if (endIdx < 0) {
+        return arrayBuffer;
+    }
+    let headerText = headerSample.slice(0, endIdx + endMarker.length);
+    let patchedHeader = headerText.replace(/property uint /g, 'property int  ');
+    if (patchedHeader === headerText) {
+        return arrayBuffer;
+    }
+    let encodedHeader = new TextEncoder().encode(patchedHeader);
+    let bodyBytes = bytes.slice(endIdx + endMarker.length);
+    let newBuffer = new ArrayBuffer(encodedHeader.length + bodyBytes.length);
+    let view = new Uint8Array(newBuffer);
+    view.set(encodedHeader, 0);
+    view.set(bodyBytes, encodedHeader.length);
+    return newBuffer;
 }
 
 /**
@@ -171,8 +200,8 @@ async function sharpSplatOpenViewer(plyBase64, filename) {
         let camera = new SPLAT.Camera();
         controls = new SPLAT.OrbitControls(camera, canvas);
 
-        // Load PLY from ArrayBuffer.
-        let arrayBuffer = sharpSplatBase64ToArrayBuffer(plyBase64);
+        // Load PLY from ArrayBuffer, patching unsupported header types first.
+        let arrayBuffer = sharpSplatPatchPlyBuffer(sharpSplatBase64ToArrayBuffer(plyBase64));
         SPLAT.PLYLoader.LoadFromArrayBuffer(arrayBuffer, scene);
 
         statusDiv.textContent = 'Use mouse to orbit \u00b7 scroll to zoom \u00b7 right-click drag to pan';
@@ -211,14 +240,14 @@ async function sharpSplatOpenViewer(plyBase64, filename) {
 
 /**
  * Handles the "Generate 3D Splat" button click.
- * Reads the current image, calls the SharpGenerateSplat API, downloads the PLY,
- * and opens the in-browser viewer.
- * @param {HTMLElement} button - The button element, passed through from registerMediaButton.
+ * Receives the image src URL from registerMediaButton, calls the SharpGenerateSplat API,
+ * downloads the PLY, and opens the in-browser viewer.
+ * @param {string} src - Image URL or data-URL, as provided by registerMediaButton.
  */
-async function handleSharpSplatGenerate(button) {
+async function handleSharpSplatGenerate(src) {
     let base64Data;
     try {
-        base64Data = await sharpSplatGetCurrentImageBase64();
+        base64Data = await sharpSplatGetImageBase64(src);
     }
     catch (err) {
         showError('SharpSplat: Failed to read the current image. ' + err.message);
@@ -228,13 +257,6 @@ async function handleSharpSplatGenerate(button) {
         showError('SharpSplat: No image available. Generate an image first.');
         return;
     }
-
-    let originalLabel = button ? button.innerHTML : null;
-    if (button) {
-        button.disabled = true;
-        button.innerHTML = 'Generating splat\u2026';
-    }
-
     try {
         let result = await new Promise((resolve, reject) => {
             genericRequest(
@@ -250,7 +272,6 @@ async function handleSharpSplatGenerate(button) {
                 }
             );
         });
-
         let filename = result.filename || 'output.ply';
         sharpSplatDownloadFile(result.plyBase64, filename);
         await sharpSplatOpenViewer(result.plyBase64, filename);
@@ -259,24 +280,27 @@ async function handleSharpSplatGenerate(button) {
         console.error('SharpSplat error:', err);
         showError('SharpSplat: ' + err.message);
     }
-    finally {
-        if (button) {
-            button.disabled = false;
-            if (originalLabel !== null) {
-                button.innerHTML = originalLabel;
-            }
-        }
-    }
 }
 
 // Register a button in the image viewer button bar.
 // 'isDefault: true' makes it visible directly rather than hidden under a "More" dropdown.
 // 'showInHistory: false' keeps it out of the output history panel (it's a generate-tab action).
-registerMediaButton(
-    'Generate 3D Splat',
-    (button) => handleSharpSplatGenerate(button),
-    'Generate a 3D Gaussian Splat (.ply) from this image using ml-sharp',
-    ['image'],
-    true,
-    false
-);
+(function() {
+    if (typeof registerMediaButton !== 'function') {
+        console.warn('SharpSplat: registerMediaButton is not available - SwarmUI version may be too old');
+        return;
+    }
+    console.log('SharpSplat: registerMediaButton invoked');
+    try {
+        registerMediaButton(
+            'Generate 3D Splat',
+            (src) => handleSharpSplatGenerate(src),
+            'Generate a 3D Gaussian Splat (.ply) from this image using ml-sharp',
+            ['image'],
+            true,
+            true
+        );
+    } catch(error) {
+        console.error(error);
+    }
+})();
