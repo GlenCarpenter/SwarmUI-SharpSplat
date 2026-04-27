@@ -224,10 +224,16 @@ public static class SharpSplatAPI
             // Convert PLY -> .splat using ply2splat and save to user output directory.
             // Saving to output allows the browser to fetch it as a normal HTTP URL,
             // which is what SPLAT.Loader.LoadAsync expects.
-            string splatFilename = $"{safePrefix}.splat";
             string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
             Directory.CreateDirectory(splatsOutputDir);
+            string splatFilename = $"{safePrefix}.splat";
             string splatPath = Path.Combine(splatsOutputDir, splatFilename);
+            if (File.Exists(splatPath))
+            {
+                string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                splatFilename = $"{safePrefix}_{timestamp}.splat";
+                splatPath = Path.Combine(splatsOutputDir, splatFilename);
+            }
             string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
             ProcessStartInfo convertPsi = BuildPythonPsi();
             convertPsi.ArgumentList.Add("-s");
