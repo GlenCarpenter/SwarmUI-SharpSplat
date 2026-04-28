@@ -55,6 +55,8 @@ class SharpSplatTabManager {
         this._canvasHovered = false;
         /** @type {Object|null} Camera/target state captured after the first auto-framing, used by resetCamera(). */
         this._initialCameraState = null;
+        /** @type {number} Incremented each time a new viewer is created so orphaned RAF loops self-terminate. */
+        this._cameraSyncGen = 0;
     }
 
     /**
@@ -144,6 +146,45 @@ class SharpSplatTabManager {
     }
 
     /**
+     * Starts a per-frame RAF loop that syncs camera position inputs whenever
+     * the camera moves (including click-to-focus, which doesn't emit a
+     * controls 'change' event). The loop self-terminates when a new viewer
+     * is created (via the generation counter) or when the viewer is disposed.
+     */
+    _startCameraSync() {
+        let gen = ++this._cameraSyncGen;
+        let lastX = null, lastY = null, lastZ = null;
+        let lastLX = null, lastLY = null, lastLZ = null;
+        const loop = () => {
+            if (gen !== this._cameraSyncGen) {
+                return;
+            }
+            if (!this._viewer || !this._viewer.camera) {
+                requestAnimationFrame(loop);
+                return;
+            }
+            let pos = this._viewer.camera.position;
+            let tgt = this._viewer.controls && this._viewer.controls.target;
+            let posValid = isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z);
+            let tgtValid = tgt && isFinite(tgt.x) && isFinite(tgt.y) && isFinite(tgt.z);
+            if (posValid || tgtValid) {
+                let active = document.activeElement;
+                if (!active || !active.classList.contains('sharpsplat-camera-input')) {
+                    let posChanged = posValid && (pos.x !== lastX || pos.y !== lastY || pos.z !== lastZ);
+                    let tgtChanged = tgtValid && (tgt.x !== lastLX || tgt.y !== lastLY || tgt.z !== lastLZ);
+                    if (posChanged || tgtChanged) {
+                        if (posValid) { lastX = pos.x; lastY = pos.y; lastZ = pos.z; }
+                        if (tgtValid) { lastLX = tgt.x; lastLY = tgt.y; lastLZ = tgt.z; }
+                        this._syncCameraInputs();
+                    }
+                }
+            }
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
+    }
+
+    /**
      * Reads the current viewer camera position into the X/Y/Z inputs.
      * No-op when no viewer is active.
      */
@@ -162,6 +203,17 @@ class SharpSplatTabManager {
         if (xInput) { xInput.value = Math.round(pos.x * 1000) / 1000; }
         if (yInput) { yInput.value = Math.round(pos.y * 1000) / 1000; }
         if (zInput) { zInput.value = Math.round(pos.z * 1000) / 1000; }
+        if (this._viewer.controls) {
+            let tgt = this._viewer.controls.target;
+            if (isFinite(tgt.x) && isFinite(tgt.y) && isFinite(tgt.z)) {
+                let lxInput = document.getElementById('sharpsplat_cam_lx');
+                let lyInput = document.getElementById('sharpsplat_cam_ly');
+                let lzInput = document.getElementById('sharpsplat_cam_lz');
+                if (lxInput) { lxInput.value = Math.round(tgt.x * 1000) / 1000; }
+                if (lyInput) { lyInput.value = Math.round(tgt.y * 1000) / 1000; }
+                if (lzInput) { lzInput.value = Math.round(tgt.z * 1000) / 1000; }
+            }
+        }
     }
 
     /**
@@ -177,6 +229,13 @@ class SharpSplatTabManager {
         let z = parseFloat(document.getElementById('sharpsplat_cam_z').value) || 0;
         if (this._viewer.camera) {
             this._viewer.camera.position.set(x, y, z);
+        }
+        if (this._viewer.controls) {
+            let lx = parseFloat(document.getElementById('sharpsplat_cam_lx').value) || 0;
+            let ly = parseFloat(document.getElementById('sharpsplat_cam_ly').value) || 0;
+            let lz = parseFloat(document.getElementById('sharpsplat_cam_lz').value) || 0;
+            this._viewer.controls.target.set(lx, ly, lz);
+            this._viewer.controls.update();
         }
     }
 
@@ -371,6 +430,7 @@ class SharpSplatTabManager {
                 'rotation': [0, 1, 0, 0],
             });
             this._viewer.start();
+            this._startCameraSync();
 
             if (this._viewer.controls) {
                 this._viewer.controls.enabled = true;
@@ -402,13 +462,8 @@ class SharpSplatTabManager {
                 };
                 requestAnimationFrame(waitForCamera);
             }
-            // Keep the camera position inputs in sync with live camera movement.
-            // Skip syncing during synthetic priming sequences to avoid -Infinity from degenerate states.
-            if (this._viewer.controls) {
-                this._viewer.controls.addEventListener('change', () => {
-                    this._syncCameraInputs();
-                });
-            }
+            // Camera input sync is handled by the _startCameraSync() RAF loop above,
+            // which catches all camera movements including click-to-focus.
             if (this._currentUrl === url && status) {
                 status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
             }
