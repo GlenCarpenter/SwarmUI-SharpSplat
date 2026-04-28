@@ -235,6 +235,8 @@ class SharpSplatTabManager {
             this._viewer = new GS3D.Viewer({
                 'rootElement': wrap,
                 'cameraUp': [0, -1, 0],
+                'initialCameraPosition': [0, -0.5, 2],
+                'initialCameraLookAt': [0, 0, 0],
                 'renderWidth': renderWidth,
                 'renderHeight': renderHeight,
                 'sharedMemoryForWorkers': false,
@@ -254,6 +256,7 @@ class SharpSplatTabManager {
             // from intercepting keystrokes on other SwarmUI tabs.
             wrap.tabIndex = -1;
             let orbitControls = new GS3D.OrbitControls(this._viewer.camera, this._viewer.renderer.domElement);
+            orbitControls.target.set(0, 0, 0);
             orbitControls.rotateSpeed = 0.5;
             orbitControls.maxPolarAngle = Math.PI * 0.75;
             orbitControls.minPolarAngle = 0.1;
