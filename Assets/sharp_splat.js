@@ -51,6 +51,10 @@ class SharpSplatTabManager {
         this._currentUrl = null;
         /** @type {boolean} Whether DOM event handlers have been wired up. */
         this._uiReady = false;
+        /** @type {boolean} Whether the mouse is currently over the canvas. */
+        this._canvasHovered = false;
+        /** @type {Object|null} Camera/target state captured after the first auto-framing, used by resetCamera(). */
+        this._initialCameraState = null;
     }
 
     /**
@@ -65,6 +69,43 @@ class SharpSplatTabManager {
         if (refreshBtn) {
             refreshBtn.onclick = () => this.refreshList();
         }
+        // Camera controls.
+        let camApply = document.getElementById('sharpsplat_cam_apply');
+        if (camApply) {
+            camApply.onclick = () => this.applyCameraPosition();
+        }
+        let camReset = document.getElementById('sharpsplat_cam_reset');
+        if (camReset) {
+            camReset.onclick = () => this.resetCamera();
+        }
+        // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.
+        for (let input of document.querySelectorAll('.sharpsplat-camera-input')) {
+            input.addEventListener('keydown', (e) => {
+                // Always stop propagation so viewer keyboard handlers never see these events.
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                    this.applyCameraPosition();
+                }
+            });
+        }
+        // Track hover over the canvas wrap so keyboard gating knows when the viewer is active.
+        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (canvasWrap) {
+            canvasWrap.addEventListener('mouseenter', () => { this._canvasHovered = true; });
+            canvasWrap.addEventListener('mouseleave', () => { this._canvasHovered = false; });
+        }
+        // Intercept keyboard events in capture phase on window — OrbitControls also attaches
+        // to window in capture phase, so we must intercept here (before document capture) to
+        // beat it. Block all keys unless the mouse is over the canvas.
+        window.addEventListener('keydown', (e) => {
+            let tag = e.target && e.target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) {
+                return;
+            }
+            if (!this._canvasHovered) {
+                e.stopPropagation();
+            }
+        }, true);
         // When the tab is activated, refresh the file list and pre-warm the viewer bundle.
         let tabBtn = document.getElementById('maintab_splatviewer');
         if (tabBtn) {
@@ -73,6 +114,60 @@ class SharpSplatTabManager {
                 this._loadModule();
             });
         }
+    }
+
+    /**
+     * Reads the current viewer camera position into the X/Y/Z inputs.
+     * No-op when no viewer is active.
+     */
+    _syncCameraInputs() {
+        if (!this._viewer || !this._viewer.camera) {
+            return;
+        }
+        let pos = this._viewer.camera.position;
+        // Bail out if camera has degenerate values (e.g. camera === target → OrbitControls produces ±Infinity).
+        if (!isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)) {
+            return;
+        }
+        let xInput = document.getElementById('sharpsplat_cam_x');
+        let yInput = document.getElementById('sharpsplat_cam_y');
+        let zInput = document.getElementById('sharpsplat_cam_z');
+        if (xInput) { xInput.value = Math.round(pos.x * 1000) / 1000; }
+        if (yInput) { yInput.value = Math.round(pos.y * 1000) / 1000; }
+        if (zInput) { zInput.value = Math.round(pos.z * 1000) / 1000; }
+    }
+
+    /**
+     * Reads the X/Y/Z inputs and moves the viewer camera to that position.
+     * No-op when no viewer is active.
+     */
+    applyCameraPosition() {
+        if (!this._viewer) {
+            return;
+        }
+        let x = parseFloat(document.getElementById('sharpsplat_cam_x').value) || 0;
+        let y = parseFloat(document.getElementById('sharpsplat_cam_y').value) || 0;
+        let z = parseFloat(document.getElementById('sharpsplat_cam_z').value) || 0;
+        if (this._viewer.camera) {
+            this._viewer.camera.position.set(x, y, z);
+        }
+    }
+
+    /**
+     * Resets the camera to the auto-framed state captured after scene load,
+     * then re-primes OrbitControls and syncs the position inputs.
+     */
+    resetCamera() {
+        if (!this._initialCameraState || !this._viewer) return;
+
+        this._viewer.camera.position.copy(this._initialCameraState.position);
+        this._viewer.camera.quaternion.copy(this._initialCameraState.quaternion);
+        this._viewer.camera.up.copy(this._initialCameraState.up);
+        this._viewer.controls.target.copy(this._initialCameraState.target);
+        this._viewer.controls.update();
+
+        // Reflect the reset position in the camera inputs.
+        this._syncCameraInputs();
     }
 
     /**
@@ -235,8 +330,7 @@ class SharpSplatTabManager {
             this._viewer = new GS3D.Viewer({
                 'rootElement': wrap,
                 'cameraUp': [0, -1, 0],
-                'initialCameraPosition': [0, -0.5, 2],
-                'initialCameraLookAt': [0, 0, 0],
+                'initialCameraPosition': [0, 0, 1],
                 'renderWidth': renderWidth,
                 'renderHeight': renderHeight,
                 'sharedMemoryForWorkers': false,
@@ -250,6 +344,44 @@ class SharpSplatTabManager {
                 'rotation': [0, 1, 0, 0],
             });
             this._viewer.start();
+
+            if (this._viewer.controls) {
+                this._viewer.controls.enabled = true;
+            }
+
+            let _canvas = wrap.querySelector('canvas');
+            if (_canvas) {
+                // Poll each frame until the viewer has auto-framed the scene and the camera
+                // has a valid non-origin position, then snapshot it for resetCamera().
+                const waitForCamera = () => {
+                    const p = this._viewer.camera?.position;
+                    const t = this._viewer.controls?.target;
+                    if (p && t &&
+                        isFinite(p.x) && isFinite(p.y) && isFinite(p.z) &&
+                        isFinite(t.x) && isFinite(t.y) && isFinite(t.z) &&
+                        (p.x !== 0 || p.y !== 0 || p.z !== 0))
+                    {
+                        this._initialCameraState = {
+                            position: p.clone(),
+                            quaternion: this._viewer.camera.quaternion.clone(),
+                            up: this._viewer.camera.up.clone(),
+                            target: t.clone(),
+                        };
+                        this._syncCameraInputs();
+                    }
+                    else {
+                        requestAnimationFrame(waitForCamera);
+                    }
+                };
+                requestAnimationFrame(waitForCamera);
+            }
+            // Keep the camera position inputs in sync with live camera movement.
+            // Skip syncing during synthetic priming sequences to avoid -Infinity from degenerate states.
+            if (this._viewer.controls) {
+                this._viewer.controls.addEventListener('change', () => {
+                    this._syncCameraInputs();
+                });
+            }
             if (this._currentUrl === url && status) {
                 status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
             }

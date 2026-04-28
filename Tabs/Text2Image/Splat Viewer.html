@@ -1,7 +1,29 @@
 <div class="sharpsplat-tab-root">
     <div class="sharpsplat-sidebar">
+        <div class="sharpsplat-camera-section">
+            <div class="sharpsplat-camera-controls">
+                <div class="sharpsplat-camera-group">
+                    <div class="sharpsplat-camera-group-label">Camera Position</div>
+                    <div class="sharpsplat-camera-row">
+                        <label class="sharpsplat-camera-label">X</label>
+                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_x" step="0.1" value="0">
+                    </div>
+                    <div class="sharpsplat-camera-row">
+                        <label class="sharpsplat-camera-label">Y</label>
+                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_y" step="0.1" value="0">
+                    </div>
+                    <div class="sharpsplat-camera-row">
+                        <label class="sharpsplat-camera-label">Z</label>
+                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_z" step="0.1" value="1">
+                    </div>
+                </div>
+                <div class="sharpsplat-camera-btns">
+                    <button class="basic-button" id="sharpsplat_cam_apply">Apply</button>
+                    <button class="basic-button" id="sharpsplat_cam_reset">Reset Camera</button>
+                </div>
+            </div>
+        </div>
         <div class="sharpsplat-sidebar-header">
-            <span>Generated Splats</span>
             <button class="basic-button" id="sharpsplat_refresh_btn">&#8635; Refresh</button>
         </div>
         <div class="sharpsplat-file-list" id="sharpsplat_file_list">

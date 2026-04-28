@@ -14,19 +14,80 @@
     background: #1a1a1a;
 }
 
+.sharpsplat-camera-section {
+    flex-shrink: 0;
+    border-bottom: 1px solid #444;
+}
+
 .sharpsplat-sidebar-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     padding: 8px 10px;
     border-bottom: 1px solid #444;
     flex-shrink: 0;
 }
 
-.sharpsplat-sidebar-header span {
-    color: #fff;
+.sharpsplat-camera-controls {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    gap: 14px;
+}
+
+.sharpsplat-camera-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sharpsplat-camera-group-label {
+    color: #aaa;
+    font-size: 11px;
     font-weight: 600;
-    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 2px;
+}
+
+.sharpsplat-camera-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sharpsplat-camera-label {
+    color: #888;
+    font-size: 12px;
+    width: 14px;
+    flex-shrink: 0;
+}
+
+.sharpsplat-camera-input {
+    flex: 1;
+    background: #2a2a2a;
+    border: 1px solid #555;
+    color: #ccc;
+    font-size: 12px;
+    padding: 4px 6px;
+    border-radius: 3px;
+    min-width: 0;
+}
+
+.sharpsplat-camera-input:focus {
+    outline: none;
+    border-color: #7bb3f0;
+}
+
+.sharpsplat-camera-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.sharpsplat-camera-btns .basic-button {
+    width: 100%;
+    font-size: 12px;
+    padding: 5px 8px;
 }
 
 .sharpsplat-file-list {
