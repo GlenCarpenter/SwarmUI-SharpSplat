@@ -1,33 +1,60 @@
 <div class="sharpsplat-tab-root">
     <div class="sharpsplat-sidebar">
-        <div class="sharpsplat-camera-section">
-            <div class="sharpsplat-camera-controls">
-                <div class="sharpsplat-camera-group">
-                    <div class="sharpsplat-camera-group-label">Camera Position</div>
-                    <div class="sharpsplat-camera-row">
-                        <label class="sharpsplat-camera-label">X</label>
-                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_x" step="0.1" value="0">
-                    </div>
-                    <div class="sharpsplat-camera-row">
-                        <label class="sharpsplat-camera-label">Y</label>
-                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_y" step="0.1" value="0">
-                    </div>
-                    <div class="sharpsplat-camera-row">
-                        <label class="sharpsplat-camera-label">Z</label>
-                        <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_z" step="0.1" value="1">
-                    </div>
-                </div>
-                <div class="sharpsplat-camera-btns">
-                    <button class="basic-button" id="sharpsplat_cam_apply">Apply</button>
-                    <button class="basic-button" id="sharpsplat_cam_reset">Reset Camera</button>
+        <!-- Settings accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_settings">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_settings_btn">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Settings
+            </button>
+            <div class="sharpsplat-accordion-body">
+                <div class="sharpsplat-settings-row">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_auto_navigate">Open in viewer after generation</label>
+                    <label class="sharpsplat-toggle">
+                        <input type="checkbox" id="sharpsplat_setting_auto_navigate">
+                        <span class="sharpsplat-toggle-slider"></span>
+                    </label>
                 </div>
             </div>
         </div>
-        <div class="sharpsplat-sidebar-header">
-            <button class="basic-button" id="sharpsplat_refresh_btn">&#8635; Refresh</button>
+        <!-- Camera accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_camera">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Camera
+            </button>
+            <div class="sharpsplat-accordion-body">
+                <div class="sharpsplat-camera-controls">
+                    <div class="sharpsplat-camera-group">
+                        <div class="sharpsplat-camera-group-label">Camera Position</div>
+                        <div class="sharpsplat-camera-row">
+                            <label class="sharpsplat-camera-label">X</label>
+                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_x" step="0.1" value="0">
+                        </div>
+                        <div class="sharpsplat-camera-row">
+                            <label class="sharpsplat-camera-label">Y</label>
+                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_y" step="0.1" value="0">
+                        </div>
+                        <div class="sharpsplat-camera-row">
+                            <label class="sharpsplat-camera-label">Z</label>
+                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_z" step="0.1" value="1">
+                        </div>
+                    </div>
+                    <div class="sharpsplat-camera-btns">
+                        <button class="basic-button" id="sharpsplat_cam_apply">Apply</button>
+                        <button class="basic-button" id="sharpsplat_cam_reset">Reset Camera</button>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="sharpsplat-file-list" id="sharpsplat_file_list">
-            <span class="sharpsplat-hint">No splats generated yet.</span>
+        <!-- Splats accordion -->
+        <div class="sharpsplat-accordion sharpsplat-accordion-flex" id="sharpsplat_acc_splats">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Splats
+                <button class="sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" title="Refresh list">&#8635;</button>
+            </button>
+            <div class="sharpsplat-accordion-body sharpsplat-accordion-body-flex">
+                <div class="sharpsplat-file-list" id="sharpsplat_file_list">
+                    <span class="sharpsplat-hint">No splats generated yet.</span>
+                </div>
+            </div>
         </div>
     </div>
     <div class="sharpsplat-viewer-panel">

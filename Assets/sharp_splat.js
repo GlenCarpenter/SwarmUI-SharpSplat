@@ -67,7 +67,8 @@ class SharpSplatTabManager {
         this._uiReady = true;
         let refreshBtn = document.getElementById('sharpsplat_refresh_btn');
         if (refreshBtn) {
-            refreshBtn.onclick = () => this.refreshList();
+            // Stop propagation so the click doesn't bubble to the accordion header.
+            refreshBtn.onclick = (e) => { e.stopPropagation(); this.refreshList(); };
         }
         // Camera controls.
         let camApply = document.getElementById('sharpsplat_cam_apply');
@@ -77,6 +78,32 @@ class SharpSplatTabManager {
         let camReset = document.getElementById('sharpsplat_cam_reset');
         if (camReset) {
             camReset.onclick = () => this.resetCamera();
+        }
+        // Accordion toggles — restore open state from localStorage.
+        for (let id of ['sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings']) {
+            let acc = document.getElementById(id);
+            if (!acc) {
+                continue;
+            }
+            let stored = localStorage.getItem(id);
+            // Camera and Splats open by default; Settings closed by default.
+            let isOpen = stored !== null ? stored === 'true' : id !== 'sharpsplat_acc_settings';
+            acc.classList.toggle('open', isOpen);
+            let btn = acc.querySelector('.sharpsplat-accordion-header');
+            if (btn) {
+                btn.addEventListener('click', () => {
+                    let open = acc.classList.toggle('open');
+                    localStorage.setItem(id, open ? 'true' : 'false');
+                });
+            }
+        }
+        // Restore and persist the auto-navigate toggle.
+        let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
+        if (autoNavToggle) {
+            autoNavToggle.checked = localStorage.getItem('sharpsplat_auto_navigate') !== 'false';
+            autoNavToggle.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_auto_navigate', autoNavToggle.checked ? 'true' : 'false');
+            });
         }
         // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.
         for (let input of document.querySelectorAll('.sharpsplat-camera-input')) {
@@ -479,9 +506,11 @@ async function handleSharpSplatGenerate(src) {
             updateGenCount();
         }
         let filename = result.filename || 'output.splat';
-        // Navigate to the tab (triggers refreshList + initViewer via the click handler),
-        // then load the newly generated splat into the viewer.
-        sharpSplatTab.navigateToTab();
+        // Only navigate to the viewer tab if the user has the setting enabled (default: on).
+        let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
+        if (!autoNavToggle || autoNavToggle.checked) {
+            sharpSplatTab.navigateToTab();
+        }
         await sharpSplatTab.loadSplat(result.splatUrl, filename);
     }
     catch (err) {
