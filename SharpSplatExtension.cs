@@ -8,7 +8,7 @@ using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 
 // NOTE: Namespace must NOT contain "SwarmUI" (reserved for built-ins).
-namespace SharpSplat;
+namespace GlenCarpenter.Extensions.SharpSplat;
 
 /// <summary>Extension that integrates Apple ml-sharp into SwarmUI.
 /// Adds a "Generate 3D Splat" button to the generate tab image viewer.

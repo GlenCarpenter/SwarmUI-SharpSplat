@@ -12,7 +12,7 @@ using SwarmUI.Core;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 
-namespace SharpSplat;
+namespace GlenCarpenter.Extensions.SharpSplat;
 
 /// <summary>Permission definitions for the SharpSplat extension.</summary>
 public static class SharpSplatPermissions
