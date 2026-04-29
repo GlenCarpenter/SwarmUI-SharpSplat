@@ -107,6 +107,14 @@ class SharpSplatTabManager {
                 localStorage.setItem('sharpsplat_auto_navigate', autoNavToggle.checked ? 'true' : 'false');
             });
         }
+        // Restore and persist the output format select.
+        let formatSelect = document.getElementById('sharpsplat_setting_output_format');
+        if (formatSelect) {
+            formatSelect.value = localStorage.getItem('sharpsplat_output_format') || 'ply';
+            formatSelect.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_output_format', formatSelect.value);
+            });
+        }
         // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.
         for (let input of document.querySelectorAll('.sharpsplat-camera-input')) {
             input.addEventListener('keydown', (e) => {
@@ -511,7 +519,9 @@ async function handleSharpSplatGenerate(src) {
         }
     }
     catch (_) {}
-    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix };
+    let outputFormatSelect = document.getElementById('sharpsplat_setting_output_format');
+    let outputFormat = outputFormatSelect ? outputFormatSelect.value : 'ply';
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix, outputFormat: outputFormat };
     /**
      * Calls a given API endpoint and returns a Promise resolving to the response.
      * @param {string} endpoint

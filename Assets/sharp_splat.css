@@ -298,6 +298,7 @@
     justify-content: space-between;
     gap: 8px;
     min-height: 28px;
+    padding: 4px 10px;
 }
 
 .sharpsplat-settings-label {
@@ -351,6 +352,23 @@
 .sharpsplat-toggle input:checked + .sharpsplat-toggle-slider::before {
     transform: translateX(16px);
     background: #fff;
+}
+
+/* Output format select */
+.sharpsplat-settings-select {
+    background: #2a2a2a;
+    border: 1px solid #555;
+    color: #ccc;
+    font-size: 12px;
+    padding: 3px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.sharpsplat-settings-select:focus {
+    outline: none;
+    border-color: #7bb3f0;
 }
 
 /* Sidebar footer (no longer used, kept for safety) */

@@ -50,6 +50,7 @@ class SharpSplatGenerate:
             "required": {
                 "images": ("IMAGE",),
                 "output_path": ("STRING", {"default": ""}),
+                "output_format": (["ply", "splat"], {"default": "ply"}),
             }
         }
 
@@ -63,12 +64,15 @@ class SharpSplatGenerate:
         "Intended for use with SwarmUI's SharpSplat extension."
     )
 
-    def generate_splat(self, images, output_path):
+    def generate_splat(self, images, output_path, output_format="ply"):
         import numpy as np
         from PIL import Image as PILImage
 
         if not output_path:
             raise ValueError("[SharpSplat] output_path must not be empty.")
+
+        if output_format not in ("ply", "splat"):
+            output_format = "ply"
 
         _ensure_deps()
 
@@ -111,22 +115,28 @@ class SharpSplatGenerate:
             # Ensure the output directory exists (C# creates it, but be safe).
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-            # Convert PLY → .splat via the extension's converter script.
-            run_convert_path = os.path.join(_EXT_DIR, "run_convert.py")
-            convert_result = subprocess.run(
-                [sys.executable, "-s", run_convert_path, ply_path, output_path],
-                capture_output=True,
-                text=True,
-            )
-            if convert_result.stdout.strip():
-                print(f"[SharpSplat] convert stdout: {convert_result.stdout.strip()}")
-            if convert_result.returncode != 0:
-                raise RuntimeError(
-                    f"[SharpSplat] PLY to .splat conversion failed (exit {convert_result.returncode}): "
-                    f"{convert_result.stderr.strip()}"
+            if output_format == "splat":
+                # Convert PLY → .splat via the extension's converter script.
+                run_convert_path = os.path.join(_EXT_DIR, "run_convert.py")
+                convert_result = subprocess.run(
+                    [sys.executable, "-s", run_convert_path, ply_path, output_path],
+                    capture_output=True,
+                    text=True,
                 )
-            if not os.path.exists(output_path):
-                raise RuntimeError("[SharpSplat] Conversion reported success but output file is missing.")
+                if convert_result.stdout.strip():
+                    print(f"[SharpSplat] convert stdout: {convert_result.stdout.strip()}")
+                if convert_result.returncode != 0:
+                    raise RuntimeError(
+                        f"[SharpSplat] PLY to .splat conversion failed (exit {convert_result.returncode}): "
+                        f"{convert_result.stderr.strip()}"
+                    )
+                if not os.path.exists(output_path):
+                    raise RuntimeError("[SharpSplat] Conversion reported success but output file is missing.")
+            else:
+                # PLY format: copy directly.
+                shutil.copy2(ply_path, output_path)
+                if not os.path.exists(output_path):
+                    raise RuntimeError("[SharpSplat] PLY copy failed — output file is missing.")
 
             print(f"[SharpSplat] Saved {os.path.getsize(output_path)} bytes to {output_path}")
         finally:

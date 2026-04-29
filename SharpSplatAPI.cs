@@ -141,7 +141,7 @@ public static class SharpSplatAPI
     /// <param name="session">The calling user session.</param>
     /// <param name="imageBase64">Base64-encoded image data (PNG/JPG/WEBP).</param>
     /// <param name="filenamePrefix">Optional filename prefix to use for the output .splat file.</param>
-    public static async Task<JObject> SharpGenerateSplat(Session session, string imageBase64, string filenamePrefix = "output")
+    public static async Task<JObject> SharpGenerateSplat(Session session, string imageBase64, string filenamePrefix = "output", string outputFormat = "ply")
     {
         if (string.IsNullOrWhiteSpace(imageBase64))
         {
@@ -166,6 +166,11 @@ public static class SharpSplatAPI
         {
             safePrefix = "output";
         }
+        if (outputFormat != "splat")
+        {
+            outputFormat = "ply";
+        }
+        string fileExtension = $".{outputFormat}";
 
         await EnsureDependenciesAsync();
 
@@ -224,57 +229,66 @@ public static class SharpSplatAPI
             // Pick the first PLY file (one image input produces one PLY).
             string plyPath = plyFiles[0];
 
-            // Convert PLY -> .splat using ply2splat and save to user output directory.
-            // Saving to output allows the browser to fetch it as a normal HTTP URL,
-            // which is what SPLAT.Loader.LoadAsync expects.
             string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
             Directory.CreateDirectory(splatsOutputDir);
-            string splatFilename = $"{safePrefix}.splat";
-            string splatPath = Path.Combine(splatsOutputDir, splatFilename);
-            if (File.Exists(splatPath))
+            string outputFilename = $"{safePrefix}{fileExtension}";
+            string outputPath = Path.Combine(splatsOutputDir, outputFilename);
+            if (File.Exists(outputPath))
             {
                 string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-                splatFilename = $"{safePrefix}_{timestamp}.splat";
-                splatPath = Path.Combine(splatsOutputDir, splatFilename);
+                outputFilename = $"{safePrefix}_{timestamp}{fileExtension}";
+                outputPath = Path.Combine(splatsOutputDir, outputFilename);
             }
-            string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
-            ProcessStartInfo convertPsi = BuildPythonPsi();
-            convertPsi.ArgumentList.Add("-s");
-            convertPsi.ArgumentList.Add(convertScript);
-            convertPsi.ArgumentList.Add(plyPath);
-            convertPsi.ArgumentList.Add(splatPath);
-            Logs.Info("SharpSplat: Converting PLY to .splat format via ply2splat...");
-            using Process convertProcess = Process.Start(convertPsi);
-            Task<string> convertOut = convertProcess.StandardOutput.ReadToEndAsync();
-            Task<string> convertErr = convertProcess.StandardError.ReadToEndAsync();
-            await convertProcess.WaitForExitAsync(CancellationToken.None);
-            string convertOutStr = (await convertOut).Trim();
-            string convertErrStr = (await convertErr).Trim();
-            if (!string.IsNullOrWhiteSpace(convertOutStr))
+            if (outputFormat == "splat")
             {
-                Logs.Debug($"SharpSplat convert stdout: {convertOutStr}");
+                string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
+                ProcessStartInfo convertPsi = BuildPythonPsi();
+                convertPsi.ArgumentList.Add("-s");
+                convertPsi.ArgumentList.Add(convertScript);
+                convertPsi.ArgumentList.Add(plyPath);
+                convertPsi.ArgumentList.Add(outputPath);
+                Logs.Info("SharpSplat: Converting PLY to .splat format via ply2splat...");
+                using Process convertProcess = Process.Start(convertPsi);
+                Task<string> convertOut = convertProcess.StandardOutput.ReadToEndAsync();
+                Task<string> convertErr = convertProcess.StandardError.ReadToEndAsync();
+                await convertProcess.WaitForExitAsync(CancellationToken.None);
+                string convertOutStr = (await convertOut).Trim();
+                string convertErrStr = (await convertErr).Trim();
+                if (!string.IsNullOrWhiteSpace(convertOutStr))
+                {
+                    Logs.Debug($"SharpSplat convert stdout: {convertOutStr}");
+                }
+                if (convertProcess.ExitCode != 0)
+                {
+                    Logs.Error($"SharpSplat: ply2splat conversion failed (exit {convertProcess.ExitCode}): {convertErrStr}");
+                    return new JObject { ["success"] = false, ["error"] = $"PLY to .splat conversion failed: {convertErrStr}" };
+                }
+                if (!File.Exists(outputPath))
+                {
+                    Logs.Error("SharpSplat: ply2splat reported success but output file does not exist.");
+                    return new JObject { ["success"] = false, ["error"] = "PLY to .splat conversion produced no output file." };
+                }
             }
-            if (convertProcess.ExitCode != 0)
+            else
             {
-                Logs.Error($"SharpSplat: ply2splat conversion failed (exit {convertProcess.ExitCode}): {convertErrStr}");
-                return new JObject { ["success"] = false, ["error"] = $"PLY to .splat conversion failed: {convertErrStr}" };
-            }
-            if (!File.Exists(splatPath))
-            {
-                Logs.Error("SharpSplat: ply2splat reported success but output file does not exist.");
-                return new JObject { ["success"] = false, ["error"] = "PLY to .splat conversion produced no output file." };
+                File.Copy(plyPath, outputPath, overwrite: false);
+                if (!File.Exists(outputPath))
+                {
+                    Logs.Error("SharpSplat: PLY copy failed — output file does not exist.");
+                    return new JObject { ["success"] = false, ["error"] = "Failed to save PLY output file." };
+                }
             }
 
             // Use /View/{userId}/... which always resolves relative to GetUserOutputRoot(userId),
             // regardless of the AppendUserNameToOutputPath server setting.
-            string splatUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(splatFilename)}";
-            long splatBytes = new FileInfo(splatPath).Length;
-            Logs.Info($"SharpSplat: Successfully produced .splat '{splatFilename}' ({splatBytes} bytes) at {splatUrl}.");
+            string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+            long outputBytes = new FileInfo(outputPath).Length;
+            Logs.Info($"SharpSplat: Successfully produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
             return new JObject
             {
                 ["success"] = true,
-                ["splatUrl"] = splatUrl,
-                ["filename"] = splatFilename
+                ["splatUrl"] = outputUrl,
+                ["filename"] = outputFilename
             };
         }
         catch (Exception ex)
@@ -309,7 +323,7 @@ public static class SharpSplatAPI
     /// <param name="session">The calling user session.</param>
     /// <param name="imageBase64">Base64-encoded image data (PNG/JPG/WEBP).</param>
     /// <param name="filenamePrefix">Optional filename prefix for the output .splat file.</param>
-    public static async Task<JObject> SharpGenerateSplatViaComfy(Session session, string imageBase64, string filenamePrefix = "output")
+    public static async Task<JObject> SharpGenerateSplatViaComfy(Session session, string imageBase64, string filenamePrefix = "output", string outputFormat = "ply")
     {
         if (string.IsNullOrWhiteSpace(imageBase64))
         {
@@ -330,15 +344,20 @@ public static class SharpSplatAPI
         {
             safePrefix = "output";
         }
+        if (outputFormat != "splat")
+        {
+            outputFormat = "ply";
+        }
+        string fileExtension = $".{outputFormat}";
         string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
         Directory.CreateDirectory(splatsOutputDir);
-        string splatFilename = $"{safePrefix}.splat";
-        string splatPath = Path.Combine(splatsOutputDir, splatFilename);
-        if (File.Exists(splatPath))
+        string outputFilename = $"{safePrefix}{fileExtension}";
+        string outputPath = Path.Combine(splatsOutputDir, outputFilename);
+        if (File.Exists(outputPath))
         {
             string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-            splatFilename = $"{safePrefix}_{timestamp}.splat";
-            splatPath = Path.Combine(splatsOutputDir, splatFilename);
+            outputFilename = $"{safePrefix}_{timestamp}{fileExtension}";
+            outputPath = Path.Combine(splatsOutputDir, outputFilename);
         }
         JObject workflow = new()
         {
@@ -356,7 +375,8 @@ public static class SharpSplatAPI
                 ["inputs"] = new JObject()
                 {
                     ["images"] = new JArray() { "1", 0 },
-                    ["output_path"] = splatPath
+                    ["output_path"] = outputPath,
+                    ["output_format"] = outputFormat
                 }
             }
         };
@@ -371,19 +391,19 @@ public static class SharpSplatAPI
             Logs.Error($"SharpSplat: ComfyUI workflow error: {ex.Message}");
             return new JObject { ["success"] = false, ["error"] = $"ComfyUI workflow failed: {ex.Message}" };
         }
-        if (!File.Exists(splatPath))
+        if (!File.Exists(outputPath))
         {
-            Logs.Error($"SharpSplat: ComfyUI workflow completed but .splat file not found at '{splatPath}'.");
-            return new JObject { ["success"] = false, ["error"] = "Workflow completed but .splat file was not produced. Check server logs." };
+            Logs.Error($"SharpSplat: ComfyUI workflow completed but output file not found at '{outputPath}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but output file was not produced. Check server logs." };
         }
-        string splatUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(splatFilename)}";
-        long splatBytes = new FileInfo(splatPath).Length;
-        Logs.Info($"SharpSplat: Successfully produced .splat via ComfyUI '{splatFilename}' ({splatBytes} bytes) at {splatUrl}.");
+        string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+        long outputBytes = new FileInfo(outputPath).Length;
+        Logs.Info($"SharpSplat: Successfully produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
         return new JObject
         {
             ["success"] = true,
-            ["splatUrl"] = splatUrl,
-            ["filename"] = splatFilename
+            ["splatUrl"] = outputUrl,
+            ["filename"] = outputFilename
         };
     }
 
@@ -399,7 +419,8 @@ public static class SharpSplatAPI
         {
             return Task.FromResult(new JObject { ["success"] = true, ["splats"] = new JArray() });
         }
-        string[] files = Directory.GetFiles(splatsDir, "*.splat")
+        string[] files = Directory.GetFiles(splatsDir)
+            .Where(f => f.EndsWith(".splat", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".ply", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
             .ToArray();
         JArray arr = new();
@@ -426,7 +447,9 @@ public static class SharpSplatAPI
         string safeFilename = string.Concat(
             (filename ?? "")
                 .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ' '));
-        if (string.IsNullOrWhiteSpace(safeFilename) || !safeFilename.EndsWith(".splat", StringComparison.OrdinalIgnoreCase))
+        bool validExtension = safeFilename.EndsWith(".splat", StringComparison.OrdinalIgnoreCase)
+            || safeFilename.EndsWith(".ply", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(safeFilename) || !validExtension)
         {
             return Task.FromResult(new JObject { ["success"] = false, ["error"] = "Invalid filename." });
         }
