@@ -125,24 +125,18 @@ class SharpSplatTabManager {
                 }
             });
         }
-        // Track hover over the canvas wrap so keyboard gating knows when the viewer is active.
+        // Track hover over the canvas wrap. On mouseenter we also focus the canvas so
+        // the keyboard listeners (redirected to the canvas by the rollup patch) fire only
+        // while the user is actively hovering the viewer.
         let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
         if (canvasWrap) {
-            canvasWrap.addEventListener('mouseenter', () => { this._canvasHovered = true; });
+            canvasWrap.addEventListener('mouseenter', () => {
+                this._canvasHovered = true;
+                let c = canvasWrap.querySelector('canvas');
+                if (c) { c.focus({ preventScroll: true }); }
+            });
             canvasWrap.addEventListener('mouseleave', () => { this._canvasHovered = false; });
         }
-        // Intercept keyboard events in capture phase on window — OrbitControls also attaches
-        // to window in capture phase, so we must intercept here (before document capture) to
-        // beat it. Block all keys from reaching OrbitControls unless the mouse is over the canvas.
-        // Note: no early-return for INPUT/TEXTAREA here — typing in any other tab's inputs must
-        // also be blocked, because OrbitControls fires before the element is reached in the
-        // capture chain. When the canvas IS hovered, OrbitControls' own patched INPUT guard
-        // (see rollup.config.js) handles focus-in-sidebar-input suppression correctly.
-        window.addEventListener('keydown', (e) => {
-            if (!this._canvasHovered) {
-                e.stopPropagation();
-            }
-        }, true);
         // When the tab is activated, refresh the file list and pre-warm the viewer bundle.
         let tabBtn = document.getElementById('maintab_splatviewer');
         if (tabBtn) {
@@ -446,6 +440,11 @@ class SharpSplatTabManager {
 
             let _canvas = wrap.querySelector('canvas');
             if (_canvas) {
+                // Make the canvas focusable so the redirected keydown listeners
+                // (on the canvas element, via rollup patches 3-5) only fire while
+                // the canvas has focus — preventing keyboard bleed to other tabs.
+                _canvas.tabIndex = -1;
+                _canvas.style.outline = 'none';
                 // Poll each frame until the viewer has auto-framed the scene and the camera
                 // has a valid non-origin position, then snapshot it for resetCamera().
                 const waitForCamera = () => {
