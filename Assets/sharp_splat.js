@@ -107,12 +107,20 @@ class SharpSplatTabManager {
                 localStorage.setItem('sharpsplat_auto_navigate', autoNavToggle.checked ? 'true' : 'false');
             });
         }
-        // Restore and persist the output format select.
+        // Restore and persist the output format select, and keep the hidden T2I param in sync.
         let formatSelect = document.getElementById('sharpsplat_setting_output_format');
         if (formatSelect) {
             formatSelect.value = localStorage.getItem('sharpsplat_output_format') || 'ply';
+            let syncFormatParam = () => {
+                let hiddenInput = document.getElementById('input_sharpsplatoutputformat');
+                if (hiddenInput) {
+                    hiddenInput.value = formatSelect.value;
+                }
+            };
+            syncFormatParam();
             formatSelect.addEventListener('change', () => {
                 localStorage.setItem('sharpsplat_output_format', formatSelect.value);
+                syncFormatParam();
             });
         }
         // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.

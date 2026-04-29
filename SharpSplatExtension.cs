@@ -7,7 +7,6 @@ using SwarmUI.Text2Image;
 using SwarmUI.Utils;
 using SwarmUI.WebAPI;
 
-// NOTE: Namespace must NOT contain "SwarmUI" (reserved for built-ins).
 namespace GlenCarpenter.Extensions.SharpSplat;
 
 /// <summary>Extension that integrates Apple ml-sharp into SwarmUI.
@@ -19,6 +18,9 @@ public class SharpSplatExtension : Extension
 {
     /// <summary>File path to this extension's folder, shared with the static API class.</summary>
     public static string ExtFolder;
+
+    /// <summary>Hidden T2I param that carries the user's preferred output format ("ply" or "splat") into the workflow generator. Synced from the UI dropdown by sharp_splat.js.</summary>
+    public static T2IRegisteredParam<string> OutputFormat;
 
     /// <inheritdoc/>
     public override void OnPreInit()
@@ -32,6 +34,16 @@ public class SharpSplatExtension : Extension
         // Register the ComfyNodes folder so ComfyUI picks up the SharpSplatGenerate node.
         ComfyUISelfStartBackend.CustomNodePaths.Add(Path.GetFullPath($"{FilePath}/ComfyNodes"));
 
+        // Hidden T2I param so the user's format preference travels through the generation pipeline.
+        OutputFormat = T2IParamTypes.Register<string>(new(
+            Name: "SharpSplat Output Format",
+            Description: "Output format for <sharpsplat> prompt-tag generation (ply or splat). Set automatically by the SharpSplat UI.",
+            Default: "ply",
+            GetValues: _ => ["ply", "splat"],
+            VisibleNormally: false,
+            HideFromMetadata: true,
+            DoNotPreview: true
+        ));
         // Register the <sharpsplat> prompt token. When present it sets a flag on the input
         // so the workflow step appends a SharpSplatGenerate node to the same ComfyUI job.
         T2IPromptHandling.PromptTagBasicProcessors["sharpsplat"] = (data, context) =>
@@ -69,14 +81,17 @@ public class SharpSplatExtension : Extension
             }
             string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
             Directory.CreateDirectory(splatsOutputDir);
-            string splatFilename = $"sharpsplat_{Guid.NewGuid():N}.splat";
+            string outputFormat = g.UserInput.Get(OutputFormat, "ply");
+            if (outputFormat != "splat") { outputFormat = "ply"; }
+            string splatFilename = $"sharpsplat_{Guid.NewGuid():N}.{outputFormat}";
             string splatPath = Path.Combine(splatsOutputDir, splatFilename);
             // CurrentMedia is already a decoded image at this priority (SaveImage runs at 10).
             WGNodeData image = g.CurrentMedia.AsRawImage(g.CurrentVae);
             g.CreateNode("SharpSplatGenerate", new JObject
             {
                 ["images"] = image.Path,
-                ["output_path"] = splatPath
+                ["output_path"] = splatPath,
+                ["output_format"] = outputFormat
             });
             Logs.Info($"SharpSplat: Added SharpSplatGenerate node targeting '{splatFilename}'.");
         }, 11);
