@@ -133,12 +133,12 @@ class SharpSplatTabManager {
         }
         // Intercept keyboard events in capture phase on window — OrbitControls also attaches
         // to window in capture phase, so we must intercept here (before document capture) to
-        // beat it. Block all keys unless the mouse is over the canvas.
+        // beat it. Block all keys from reaching OrbitControls unless the mouse is over the canvas.
+        // Note: no early-return for INPUT/TEXTAREA here — typing in any other tab's inputs must
+        // also be blocked, because OrbitControls fires before the element is reached in the
+        // capture chain. When the canvas IS hovered, OrbitControls' own patched INPUT guard
+        // (see rollup.config.js) handles focus-in-sidebar-input suppression correctly.
         window.addEventListener('keydown', (e) => {
-            let tag = e.target && e.target.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) {
-                return;
-            }
             if (!this._canvasHovered) {
                 e.stopPropagation();
             }
