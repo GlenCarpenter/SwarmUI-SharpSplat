@@ -136,6 +136,59 @@ public static class SharpSplatAPI
     }
 
     /// <summary>
+    /// Sanitizes and resolves a unique output filename/path for generated splat files.
+    /// Uses a UUID suffix whenever the caller did not provide a meaningful prefix.
+    /// </summary>
+    private static (string OutputFormat, string SafePrefix, string OutputFilename, string OutputPath) PrepareUniqueOutputPath(Session session, string filenamePrefix, string outputFormat)
+    {
+        string safePrefix = string.Concat(
+            (filenamePrefix ?? "output")
+                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'));
+        if (string.IsNullOrWhiteSpace(safePrefix))
+        {
+            safePrefix = "output";
+        }
+        if (outputFormat != "splat")
+        {
+            outputFormat = "ply";
+        }
+        string fileExtension = $".{outputFormat}";
+        string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+        Directory.CreateDirectory(splatsOutputDir);
+
+        // Unknown/default names should always get a UUID to avoid queued-job collisions.
+        bool useUuidSuffix = safePrefix == "output";
+        string outputFilename;
+        if (useUuidSuffix)
+        {
+            outputFilename = $"{safePrefix}_{Guid.NewGuid():N}{fileExtension}";
+        }
+        else
+        {
+            outputFilename = $"{safePrefix}{fileExtension}";
+        }
+
+        string outputPath = Path.Combine(splatsOutputDir, outputFilename);
+        int dedupeCounter = 0;
+        while (File.Exists(outputPath))
+        {
+            dedupeCounter++;
+            if (useUuidSuffix)
+            {
+                outputFilename = $"{safePrefix}_{Guid.NewGuid():N}{fileExtension}";
+            }
+            else
+            {
+                string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+                outputFilename = $"{safePrefix}_{timestamp}_{dedupeCounter}{fileExtension}";
+            }
+            outputPath = Path.Combine(splatsOutputDir, outputFilename);
+        }
+
+        return (outputFormat, safePrefix, outputFilename, outputPath);
+    }
+
+    /// <summary>
     /// Generates a 3D Gaussian Splat PLY file from the provided base64-encoded image using ml-sharp.
     /// </summary>
     /// <param name="session">The calling user session.</param>
@@ -158,19 +211,9 @@ public static class SharpSplatAPI
             return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
         }
 
-        // Sanitize filenamePrefix: keep only safe characters, fall back to "output".
-        string safePrefix = string.Concat(
-            (filenamePrefix ?? "output")
-                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'));
-        if (string.IsNullOrWhiteSpace(safePrefix))
-        {
-            safePrefix = "output";
-        }
-        if (outputFormat != "splat")
-        {
-            outputFormat = "ply";
-        }
-        string fileExtension = $".{outputFormat}";
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
 
         await EnsureDependenciesAsync();
 
@@ -229,16 +272,6 @@ public static class SharpSplatAPI
             // Pick the first PLY file (one image input produces one PLY).
             string plyPath = plyFiles[0];
 
-            string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
-            Directory.CreateDirectory(splatsOutputDir);
-            string outputFilename = $"{safePrefix}{fileExtension}";
-            string outputPath = Path.Combine(splatsOutputDir, outputFilename);
-            if (File.Exists(outputPath))
-            {
-                string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-                outputFilename = $"{safePrefix}_{timestamp}{fileExtension}";
-                outputPath = Path.Combine(splatsOutputDir, outputFilename);
-            }
             if (outputFormat == "splat")
             {
                 string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
@@ -337,28 +370,9 @@ public static class SharpSplatAPI
         {
             return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
         }
-        string safePrefix = string.Concat(
-            (filenamePrefix ?? "output")
-                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'));
-        if (string.IsNullOrWhiteSpace(safePrefix))
-        {
-            safePrefix = "output";
-        }
-        if (outputFormat != "splat")
-        {
-            outputFormat = "ply";
-        }
-        string fileExtension = $".{outputFormat}";
-        string splatsOutputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
-        Directory.CreateDirectory(splatsOutputDir);
-        string outputFilename = $"{safePrefix}{fileExtension}";
-        string outputPath = Path.Combine(splatsOutputDir, outputFilename);
-        if (File.Exists(outputPath))
-        {
-            string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-            outputFilename = $"{safePrefix}_{timestamp}{fileExtension}";
-            outputPath = Path.Combine(splatsOutputDir, outputFilename);
-        }
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
         JObject workflow = new()
         {
             ["1"] = new JObject()
