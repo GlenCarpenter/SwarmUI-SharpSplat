@@ -448,6 +448,56 @@
     word-break: break-all;
 }
 
+/* Multi-image thumbnail strip (VGGT mode) */
+.sharpsplat-multi-preview-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 2px 0;
+}
+
+.sharpsplat-multi-thumb {
+    position: relative;
+    width: 52px;
+    height: 52px;
+    flex-shrink: 0;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid #555;
+    background: #171717;
+}
+
+.sharpsplat-multi-thumb img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.sharpsplat-multi-thumb-remove {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 16px;
+    height: 16px;
+    background: rgba(0, 0, 0, 0.65);
+    border: none;
+    border-radius: 50%;
+    color: #ccc;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.sharpsplat-multi-thumb-remove:hover {
+    background: rgba(180, 60, 60, 0.85);
+    color: #fff;
+}
+
 #sharpsplat_generate_btn {
     width: 100%;
     font-size: 12px;

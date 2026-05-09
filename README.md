@@ -1,65 +1,62 @@
 # SwarmUI-SharpSplat
 
-A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns any generated image into a 3D Gaussian Splat directly inside the browser.
+A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns images into 3D Gaussian Splats directly inside the browser.
 
-It uses Apple's [ml-sharp](https://github.com/apple/ml-sharp) to reconstruct a 3D scene from a single image, saving the result as `.ply` by default (or `.splat` if preferred), and renders it interactively in a dedicated **Splat Viewer** tab powered by [GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D/).
+Two reconstruction models are supported:
+
+- **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
+- **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Takes **multiple images** of the same scene from different angles and produces a denser, more accurate point cloud.
+
+Results are saved as `.ply` (default) or `.splat` and rendered interactively in a dedicated **Splat Viewer** tab powered by [GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D/).
 
 ---
 
 ## How It Works
 
 ```
-Generated image
-      │
-      ▼
-[Generate 3D Splat button]
-      │
-      ▼  (sends image as base64 to server)
-SharpGenerateSplat API (C#)
-      │
-      ├─► ml-sharp  →  .ply  (3D Gaussian Splat, standard PLY format)
-      │
-      └─► [if format = splat] ply2splat  →  .splat  (compact 32-bytes-per-splat binary)
-                               saved to Output/{user}/splats/
-      │
-      ▼  (returns /View/... HTTP URL)
-Splat Viewer tab (browser)
-      │
-      └─► GaussianSplats3D  →  interactive WebGL viewer
+Single image (ml-sharp)         Multiple images (VGGT)
+        │                               │
+        ▼                               ▼
+[Generate 3D Splat button]    [Splat Viewer → drop images]
+        │                               │
+        └───────────┬───────────────────┘
+                    ▼  (base64 → server)
+           SharpSplat API (C#)
+                    │
+           ┌────────┴────────┐
+           ▼                 ▼
+        ml-sharp           VGGT
+    (single image)    (multi-image)
+           │                 │
+           └────────┬────────┘
+                    ▼
+               .ply output
+                    │
+              [if format = splat]
+                    ▼
+               ply2splat → .splat
+               saved to Output/{user}/splats/
+                    │
+                    ▼
+         Splat Viewer tab (WebGL)
 ```
-
-### Step by step
-
-1. **Generate an image** in the SwarmUI Generate tab as normal.
-2. Click the **Generate 3D Splat** button that appears on the image.
-3. The image is sent to the SwarmUI server. The extension:
-   - Writes the image to a temp directory.
-   - Runs `sharp predict` via ml-sharp to reconstruct a 3D Gaussian Splat as a `.ply` file.
-   - Saves the output to `Output/{user}/splats/` — as `.ply` by default, or converted to `.splat` via `ply2splat` if that format is selected in Settings.
-   - Returns the HTTP URL of the saved file.
-4. SwarmUI automatically navigates to the **Splat Viewer** tab and loads the result (adjustable in settings).
-5. Orbit, zoom, and pan around the scene with the mouse.
-
-Previously generated splats are listed in the sidebar and can be reloaded at any time.
-
-
-https://github.com/user-attachments/assets/4094c5f1-c789-431d-a99c-53ec3ff7d601
-
 
 ---
 
 ## Requirements
 
 - SwarmUI with a working ComfyUI backend (provides the Python environment).
-- An NVIDIA GPU is strongly recommended. `ml-sharp` uses PyTorch for inference.
-- Internet access on first use to install Python dependencies.
+- An NVIDIA GPU is strongly recommended for both models.
+- Internet access on first use to download model weights and install Python dependencies.
 
-Python dependencies are installed automatically the first time you click **Generate 3D Splat**:
+Python dependencies are installed automatically on first use:
 
 | Package | Purpose |
 |---|---|
-| [ml-sharp](https://github.com/apple/ml-sharp) | Monocular 3D Gaussian Splat reconstruction |
-| [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` binary conversion (only required when output format is set to `.splat`) |
+| [ml-sharp](https://github.com/apple/ml-sharp) | Monocular 3DGS reconstruction (single image) |
+| [VGGT](https://github.com/facebookresearch/vggt) | Multi-view 3D reconstruction |
+| [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Downloads VGGT model weights (~1 GB, first run only) |
+| [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` conversion (only needed when output format is `.splat`) |
 
 ---
 
@@ -80,34 +77,58 @@ git clone https://github.com/GlenCarpenter/SwarmUI-SharpSplat
 
 ## Usage
 
-### Generating a splat
+### Generating a splat from a single image (ml-sharp)
 
 1. Generate any image in the **Generate** tab.
 2. Click **Generate 3D Splat** in the image button bar.
 3. Wait for inference (30–120 seconds depending on GPU).
 4. The **Splat Viewer** tab opens automatically with the result loaded.
 
-### Choosing the output format
+You can also drop or browse to an image in the **Splat Viewer** sidebar directly.
 
-In the **Splat Viewer** sidebar, open **Settings** and use the **Output format** dropdown to choose between:
+### Generating a splat from multiple images (VGGT)
 
-- **`.ply`** *(default)* — Standard Gaussian Splat PLY file. No conversion step; faster to save.
-- **`.splat`** — Compact 32-bytes-per-splat binary. Requires the `ply2splat` Python package.
+VGGT produces significantly better results than ml-sharp when you supply multiple photos of the same subject taken from different angles (like a photogrammetry capture).
 
-The selection is remembered between sessions.
+1. Open the **Splat Viewer** tab.
+2. In **Settings**, change **Reconstruction model** to **VGGT**.
+3. The dropzone in the **Input Image** section will now accept multiple files.
+4. Drop all your images onto the dropzone, or click **Browse** to select them.  
+   Each added image appears as a thumbnail — click **×** on a thumbnail to remove it.
+5. Click **Generate Splat**.
+6. VGGT inference runs through the ComfyUI backend (VRAM-managed like normal generations), falling back to a direct subprocess if no ComfyUI backend is available.
+
+**Tips for best results:**
+- Use 5–20 overlapping photos that cover the subject from many angles.
+- Keep consistent lighting across shots.
+- Avoid motion blur and reflective surfaces.
+- Images are resized to 518 × 518 before inference. If your images are not square, enable **Pad images to square** in Settings (see below) to preserve the full frame.
+
+### Settings
+
+Open **Settings** in the Splat Viewer sidebar to configure:
+
+| Setting | Description |
+|---|---|
+| **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
+| **Reconstruction model** | `ml-sharp` (single image, fast) or `VGGT` (multiple images, denser). |
+| **Pad images to square** | *(VGGT only)* Resize each input image to fit within a 518 × 518 square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
+| **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
+
+All settings are remembered between sessions.
 
 ### Automatic generation with the `<sharpsplat>` prompt tag
 
-Add `<sharpsplat>` anywhere in your prompt to automatically generate a splat file from every image produced by that generation, without clicking the button manually.
+Add `<sharpsplat>` anywhere in your prompt to automatically generate a splat from every image produced by that generation, without clicking the button manually.
 
 ```
 a photo of a red apple on a wooden table <sharpsplat>
 ```
 
-- The tag is stripped from the prompt before it reaches the model — it has no effect on image content.
-- Splat generation runs as a node inside the same ComfyUI job as the image, so each image waits for its splat to finish before the next image begins.
-- Batch generations produce one `.splat` per image.
-- Generated splats appear in the **Splat Viewer** sidebar as usual.
+- The tag is stripped before it reaches the model — it has no effect on image content.
+- Splat generation runs as a node inside the same ComfyUI job as the image.
+- Batch generations produce one splat per image.
+- This tag always uses **ml-sharp** (single-image mode).
 
 The tag is available in the prompt autocomplete — type `<sharpsplat` to see it suggested.
 
@@ -118,7 +139,7 @@ The tag is available in the prompt autocomplete — type `<sharpsplat` to see it
 3. Click any entry to load it into the viewer.
 4. Use **↺ Refresh** to update the list after generating new splats.
 
-### Controls
+### Viewer controls
 
 | Action | Control |
 |---|---|
@@ -126,10 +147,9 @@ The tag is available in the prompt autocomplete — type `<sharpsplat` to see it
 | Zoom | Scroll wheel |
 | Pan | Right-click + drag |
 
-
 ---
 
-### Roadmap
+## Roadmap
 
 - Export frame from splat
   - Send to edit
@@ -137,3 +157,4 @@ The tag is available in the prompt autocomplete — type `<sharpsplat` to see it
   - Crop
 - Export `PLY` as `SPLAT` or `KSPLAT`
 - Export `SPLAT` as `KSPLAT`
+

@@ -57,12 +57,14 @@ class SharpSplatTabManager {
         this._initialCameraState = null;
         /** @type {number} Incremented each time a new viewer is created so orphaned RAF loops self-terminate. */
         this._cameraSyncGen = 0;
-        /** @type {string|null} Base64 image data selected in the sidebar dropzone. */
+        /** @type {string|null} Base64 image data selected in the sidebar dropzone (ml-sharp single-image mode). */
         this._inputImageBase64 = null;
-        /** @type {string|null} Selected sidebar image filename. */
+        /** @type {string|null} Selected sidebar image filename (ml-sharp single-image mode). */
         this._inputImageName = null;
-        /** @type {string|null} Data URL used for sidebar thumbnail preview. */
+        /** @type {string|null} Data URL used for sidebar thumbnail preview (ml-sharp single-image mode). */
         this._inputImagePreviewDataUrl = null;
+        /** @type {Array<{base64: string, name: string, dataUrl: string}>} Selected images in VGGT multi-image mode. */
+        this._inputImages = [];
     }
 
     /**
@@ -129,6 +131,23 @@ class SharpSplatTabManager {
                 syncFormatParam();
             });
         }
+        // Restore and persist the model selector; rebuild dropzone mode on change.
+        let modelSelect = document.getElementById('sharpsplat_setting_model');
+        if (modelSelect) {
+            modelSelect.value = localStorage.getItem('sharpsplat_model') || 'mlsharp';
+            modelSelect.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_model', modelSelect.value);
+                this._onModelChange();
+            });
+        }
+        // Restore and persist the VGGT pad-to-square checkbox.
+        let padCheck = document.getElementById('sharpsplat_setting_pad_to_square');
+        if (padCheck) {
+            padCheck.checked = localStorage.getItem('sharpsplat_vggt_pad_to_square') === 'true';
+            padCheck.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_vggt_pad_to_square', padCheck.checked ? 'true' : 'false');
+            });
+        }
         this._setupInputDropzone();
         // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.
         for (let input of document.querySelectorAll('.sharpsplat-camera-input')) {
@@ -163,7 +182,57 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Wires drop/click input handlers for the single-image dropzone.
+     * Returns the currently selected model ('mlsharp' or 'vggt').
+     */
+    _getModel() {
+        let sel = document.getElementById('sharpsplat_setting_model');
+        return sel ? (sel.value || 'mlsharp') : 'mlsharp';
+    }
+
+    /**
+     * Called whenever the model selector changes. Re-applies dropzone mode and clears state.
+     */
+    _onModelChange() {
+        this._inputImageBase64 = null;
+        this._inputImageName = null;
+        this._inputImagePreviewDataUrl = null;
+        this._inputImages = [];
+        this._applyDropzoneMode();
+        this._updateInputImageState();
+    }
+
+    /**
+     * Applies single-image or multi-image dropzone mode based on current model selection.
+     * Toggles the `multiple` attribute on the file input and updates hint text.
+     */
+    _applyDropzoneMode() {
+        let fileInput = document.getElementById('sharpsplat_input_file');
+        let mainHint = document.getElementById('sharpsplat_dropzone_main');
+        let subHint = document.getElementById('sharpsplat_dropzone_sub');
+        if (!fileInput) {
+            return;
+        }
+        let isVggt = this._getModel() === 'vggt';
+        if (isVggt) {
+            fileInput.setAttribute('multiple', '');
+            if (mainHint) { mainHint.textContent = 'Drop images here (multiple allowed)'; }
+            if (subHint) { subHint.textContent = 'or click Browse to select one or more'; }
+        }
+        else {
+            fileInput.removeAttribute('multiple');
+            if (mainHint) { mainHint.textContent = 'Drop a single image here'; }
+            if (subHint) { subHint.textContent = 'or click Browse to select'; }
+        }
+        // Show/hide VGGT-only settings rows.
+        let padRow = document.getElementById('sharpsplat_row_pad_to_square');
+        if (padRow) {
+            padRow.style.display = isVggt ? '' : 'none';
+        }
+    }
+
+    /**
+     * Wires drop/click input handlers for the dropzone.
+     * Supports both single-image (ml-sharp) and multi-image (VGGT) modes.
      */
     _setupInputDropzone() {
         let dropzone = document.getElementById('sharpsplat_dropzone');
@@ -174,6 +243,9 @@ class SharpSplatTabManager {
         if (!dropzone || !fileInput || !browseBtn || !clearBtn || !generateBtn) {
             return;
         }
+
+        // Apply initial mode from restored setting.
+        this._applyDropzoneMode();
 
         let preventEvent = (e) => {
             e.preventDefault();
@@ -203,7 +275,12 @@ class SharpSplatTabManager {
             if (!fileInput.files || fileInput.files.length < 1) {
                 return;
             }
-            await this._setInputImageFromFile(fileInput.files[0]);
+            if (this._getModel() === 'vggt') {
+                await this._addVggtInputFiles(fileInput.files);
+            }
+            else {
+                await this._setInputImageFromFile(fileInput.files[0]);
+            }
             fileInput.value = '';
         });
 
@@ -212,25 +289,86 @@ class SharpSplatTabManager {
             if (!files || files.length < 1) {
                 return;
             }
-            await this._setInputImageFromFile(files[0]);
+            if (this._getModel() === 'vggt') {
+                await this._addVggtInputFiles(files);
+            }
+            else {
+                await this._setInputImageFromFile(files[0]);
+            }
         });
 
         clearBtn.addEventListener('click', () => {
             this._inputImageBase64 = null;
             this._inputImageName = null;
             this._inputImagePreviewDataUrl = null;
+            this._inputImages = [];
             this._updateInputImageState();
         });
 
         generateBtn.addEventListener('click', async () => {
-            if (!this._inputImageBase64) {
-                return;
+            if (this._getModel() === 'vggt') {
+                if (this._inputImages.length < 1) {
+                    return;
+                }
+                let prefix = sharpSplatGetFilenamePrefix(this._inputImages[0].name || 'output');
+                await sharpSplatGenerateVggt(this._inputImages, prefix);
             }
-            let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
-            await sharpSplatGenerateFromBase64(this._inputImageBase64, filenamePrefix);
+            else {
+                if (!this._inputImageBase64) {
+                    return;
+                }
+                let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
+                await sharpSplatGenerateFromBase64(this._inputImageBase64, filenamePrefix);
+            }
         });
 
         this._updateInputImageState();
+    }
+
+    /**
+     * Reads one or more files into the VGGT multi-image list, deduplicating by name.
+     * @param {FileList} files
+     */
+    async _addVggtInputFiles(files) {
+        for (let file of files) {
+            if (!file || !file.type || !file.type.startsWith('image/')) {
+                showError('SharpSplat: Please choose image files only.');
+                continue;
+            }
+            // Deduplicate by name.
+            if (this._inputImages.some(img => img.name === file.name)) {
+                continue;
+            }
+            try {
+                let imageData = await this._readFileAsDataUrl(file);
+                this._inputImages.push({ base64: imageData.base64Data, name: file.name, dataUrl: imageData.dataUrl });
+            }
+            catch (err) {
+                showError('SharpSplat: ' + err.message);
+            }
+        }
+        this._updateInputImageState();
+    }
+
+    /**
+     * Reads a File as a data URL and returns {dataUrl, base64Data}.
+     * @param {File} file
+     */
+    _readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            let reader = new FileReader();
+            reader.onloadend = () => {
+                let dataUrl = typeof reader.result === 'string' ? reader.result : '';
+                let commaIndex = dataUrl.indexOf(',');
+                if (commaIndex < 0) {
+                    reject(new Error('Invalid image data.'));
+                    return;
+                }
+                resolve({ dataUrl: dataUrl, base64Data: dataUrl.slice(commaIndex + 1) });
+            };
+            reader.onerror = () => reject(new Error('Failed to read image file.'));
+            reader.readAsDataURL(file);
+        });
     }
 
     /**
@@ -243,25 +381,7 @@ class SharpSplatTabManager {
             return;
         }
         try {
-            let imageData = await new Promise((resolve, reject) => {
-                let reader = new FileReader();
-                reader.onloadend = () => {
-                    let dataUrl = typeof reader.result === 'string' ? reader.result : '';
-                    let commaIndex = dataUrl.indexOf(',');
-                    if (commaIndex < 0) {
-                        reject(new Error('Invalid image data.'));
-                        return;
-                    }
-                    resolve({
-                        dataUrl: dataUrl,
-                        base64Data: dataUrl.slice(commaIndex + 1)
-                    });
-                };
-                reader.onerror = () => {
-                    reject(new Error('Failed to read dropped image data.'));
-                };
-                reader.readAsDataURL(file);
-            });
+            let imageData = await this._readFileAsDataUrl(file);
             this._inputImageBase64 = imageData.base64Data;
             this._inputImageName = file.name || 'image';
             this._inputImagePreviewDataUrl = imageData.dataUrl;
@@ -273,33 +393,84 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Updates the sidebar input controls based on whether an image is selected.
+     * Updates the sidebar input controls based on whether an image (or images) is selected.
      */
     _updateInputImageState() {
         let nameLabel = document.getElementById('sharpsplat_input_name');
         let generateBtn = document.getElementById('sharpsplat_generate_btn');
         let previewWrap = document.getElementById('sharpsplat_input_preview_wrap');
         let previewImg = document.getElementById('sharpsplat_input_preview');
-        if (nameLabel) {
-            if (this._inputImageName) {
-                nameLabel.textContent = 'Selected: ' + this._inputImageName;
+        let isVggt = this._getModel() === 'vggt';
+
+        if (isVggt) {
+            let count = this._inputImages.length;
+            if (nameLabel) {
+                nameLabel.textContent = count > 0 ? count + ' image' + (count === 1 ? '' : 's') + ' selected' : 'No images selected.';
             }
-            else {
-                nameLabel.textContent = 'No image selected.';
+            // Render thumbnail strip.
+            if (previewWrap) {
+                if (count > 0) {
+                    previewWrap.classList.add('active');
+                    previewWrap.innerHTML = '';
+                    let strip = createDiv(null, 'sharpsplat-multi-preview-strip');
+                    for (let i = 0; i < count; i++) {
+                        let img = this._inputImages[i];
+                        let thumb = document.createElement('div');
+                        thumb.className = 'sharpsplat-multi-thumb';
+                        thumb.title = img.name;
+                        let imgEl = document.createElement('img');
+                        imgEl.src = img.dataUrl;
+                        imgEl.alt = img.name;
+                        let removeBtn = document.createElement('button');
+                        removeBtn.className = 'sharpsplat-multi-thumb-remove';
+                        removeBtn.innerHTML = '&times;';
+                        removeBtn.title = 'Remove ' + img.name;
+                        // Capture index via closure.
+                        removeBtn.onclick = ((idx) => () => {
+                            this._inputImages.splice(idx, 1);
+                            this._updateInputImageState();
+                        })(i);
+                        thumb.appendChild(imgEl);
+                        thumb.appendChild(removeBtn);
+                        strip.appendChild(thumb);
+                    }
+                    previewWrap.appendChild(strip);
+                }
+                else {
+                    previewWrap.classList.remove('active');
+                    previewWrap.innerHTML = '';
+                }
+            }
+            if (generateBtn) {
+                generateBtn.disabled = count < 1;
             }
         }
-        if (previewWrap && previewImg) {
-            if (this._inputImagePreviewDataUrl) {
-                previewImg.src = this._inputImagePreviewDataUrl;
-                previewWrap.classList.add('active');
+        else {
+            if (nameLabel) {
+                if (this._inputImageName) {
+                    nameLabel.textContent = 'Selected: ' + this._inputImageName;
+                }
+                else {
+                    nameLabel.textContent = 'No image selected.';
+                }
             }
-            else {
-                previewImg.removeAttribute('src');
-                previewWrap.classList.remove('active');
+            if (previewWrap && previewImg) {
+                if (this._inputImagePreviewDataUrl) {
+                    previewWrap.innerHTML = '';
+                    previewWrap.appendChild(previewImg);
+                    previewImg.src = this._inputImagePreviewDataUrl;
+                    previewWrap.classList.add('active');
+                }
+                else {
+                    previewImg.removeAttribute('src');
+                    previewWrap.classList.remove('active');
+                    previewWrap.innerHTML = '';
+                    previewWrap.appendChild(previewImg);
+                }
             }
-        }
-        if (generateBtn) {
-            generateBtn.disabled = !this._inputImageBase64;
+            if (generateBtn) {
+                generateBtn.disabled = !this._inputImageBase64;
+            }
         }
     }
 
@@ -712,17 +883,7 @@ async function sharpSplatGenerateFromBase64(base64Data, filenamePrefix) {
                 throw comfyErr;
             }
         }
-        // Force another poll now that the generation is complete so the counter clears promptly.
-        if (typeof updateGenCount === 'function') {
-            updateGenCount();
-        }
-        let filename = result.filename || 'output.splat';
-        // Only navigate to the viewer tab if the user has the setting enabled (default: on).
-        let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
-        if (!autoNavToggle || autoNavToggle.checked) {
-            sharpSplatTab.navigateToTab();
-        }
-        await sharpSplatTab.loadSplat(result.splatUrl, filename);
+        await sharpSplatFinishGeneration(result);
     }
     catch (err) {
         console.error('SharpSplat error:', err);
@@ -731,10 +892,81 @@ async function sharpSplatGenerateFromBase64(base64Data, filenamePrefix) {
 }
 
 /**
- * Handles the "Generate 3D Splat" button click.
- * Tries the ComfyUI-backed route first (SharpGenerateSplatViaComfy), which queues
- * generation through the Comfy backend. Falls back to the direct subprocess route
- * (SharpGenerateSplat) when no ComfyUI backend is available.
+ * Generates a point-cloud PLY splat from multiple images using VGGT and loads it in the viewer.
+ * Tries the ComfyUI backend route first (VGGTGenerateSplatViaComfy), which queues the
+ * VGGT job through Comfy so VRAM is shared with other generations.
+ * Falls back to the direct subprocess route (VGGTGenerateSplat) when no backend is available.
+ * @param {Array<{base64: string, name: string}>} images
+ * @param {string} filenamePrefix
+ */
+async function sharpSplatGenerateVggt(images, filenamePrefix) {
+    let outputFormatSelect = document.getElementById('sharpsplat_setting_output_format');
+    let outputFormat = outputFormatSelect ? outputFormatSelect.value : 'ply';
+    let padCheck = document.getElementById('sharpsplat_setting_pad_to_square');
+    let padToSquare = padCheck ? padCheck.checked : false;
+    let imagesBase64 = images.map(img => img.base64);
+    let requestParams = { imagesBase64: imagesBase64, filenamePrefix: filenamePrefix || 'output', outputFormat: outputFormat, padToSquare: padToSquare };
+    function callVggtAPI(endpoint) {
+        return new Promise((resolve, reject) => {
+            genericRequest(endpoint, requestParams, (data) => {
+                if (data.success) {
+                    resolve(data);
+                }
+                else {
+                    reject(new Error(data.error || 'VGGT generation failed.'));
+                }
+            });
+        });
+    }
+    try {
+        let result;
+        try {
+            let comfyPromise = callVggtAPI('VGGTGenerateSplatViaComfy');
+            if (typeof updateGenCount === 'function') {
+                updateGenCount();
+            }
+            result = await comfyPromise;
+        }
+        catch (comfyErr) {
+            if (comfyErr.message && comfyErr.message.includes('No available ComfyUI Backend')) {
+                console.warn('SharpSplat VGGT: No ComfyUI backend available, falling back to direct generation.');
+                result = await callVggtAPI('VGGTGenerateSplat');
+            }
+            else {
+                throw comfyErr;
+            }
+        }
+        await sharpSplatFinishGeneration(result);
+    }
+    catch (err) {
+        console.error('SharpSplat VGGT error:', err);
+        showError('SharpSplat: ' + err.message);
+    }
+}
+
+/**
+ * Common post-generation handler: navigates to the viewer tab and loads the result.
+ * @param {{splatUrl: string, filename: string}} result
+ */
+async function sharpSplatFinishGeneration(result) {
+    // Force another poll now that the generation is complete so the counter clears promptly.
+    if (typeof updateGenCount === 'function') {
+        updateGenCount();
+    }
+    let filename = result.filename || 'output.ply';
+    // Only navigate to the viewer tab if the user has the setting enabled (default: on).
+    let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
+    if (!autoNavToggle || autoNavToggle.checked) {
+        sharpSplatTab.navigateToTab();
+    }
+    await sharpSplatTab.refreshList();
+    await sharpSplatTab.loadSplat(result.splatUrl, filename);
+}
+
+/**
+ * Handles the "Generate 3D Splat" button click from the image viewer media button.
+ * Routes to VGGT or ml-sharp based on the current model setting.
+ * Always receives a single image from the media button.
  * @param {string} src - Image URL or data-URL, as provided by registerMediaButton.
  */
 async function handleSharpSplatGenerate(src) {
@@ -759,7 +991,14 @@ async function handleSharpSplatGenerate(src) {
         }
     }
     catch (_) {}
-    await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
+    let modelSel = document.getElementById('sharpsplat_setting_model');
+    let model = modelSel ? (modelSel.value || 'mlsharp') : 'mlsharp';
+    if (model === 'vggt') {
+        await sharpSplatGenerateVggt([{ base64: base64Data, name: filenamePrefix }], filenamePrefix);
+    }
+    else {
+        await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
+    }
 }
 
 // Wire up UI and register the image viewer button once the page is ready.

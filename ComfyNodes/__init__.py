@@ -8,3 +8,10 @@ try:
 except Exception:
     print("Error: [SharpSplat] SharpSplatNode not available")
     traceback.print_exc()
+
+try:
+    from . import VGGTSplatNode
+    NODE_CLASS_MAPPINGS.update(VGGTSplatNode.NODE_CLASS_MAPPINGS)
+except Exception:
+    print("Error: [SharpSplat] VGGTSplatNode not available")
+    traceback.print_exc()

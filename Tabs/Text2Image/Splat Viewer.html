@@ -14,6 +14,20 @@
                     </label>
                 </div>
                 <div class="sharpsplat-settings-row">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_model">Reconstruction model</label>
+                    <select class="sharpsplat-settings-select" id="sharpsplat_setting_model">
+                        <option value="mlsharp">ml-sharp</option>
+                        <option value="vggt">VGGT</option>
+                    </select>
+                </div>
+                <div class="sharpsplat-settings-row sharpsplat-vggt-only" id="sharpsplat_row_pad_to_square" style="display:none">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_pad_to_square">Pad images to square</label>
+                    <label class="sharpsplat-toggle">
+                        <input type="checkbox" id="sharpsplat_setting_pad_to_square">
+                        <span class="sharpsplat-toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="sharpsplat-settings-row">
                     <label class="sharpsplat-settings-label" for="sharpsplat_setting_output_format">Output format</label>
                     <select class="sharpsplat-settings-select" id="sharpsplat_setting_output_format">
                         <option value="ply">PLY</option>
@@ -30,8 +44,8 @@
             <div class="sharpsplat-accordion-body">
                 <div class="sharpsplat-input-wrap">
                     <div class="sharpsplat-dropzone" id="sharpsplat_dropzone">
-                        <div class="sharpsplat-dropzone-main">Drop a single image here</div>
-                        <div class="sharpsplat-dropzone-sub">or click Browse to select</div>
+                        <div class="sharpsplat-dropzone-main" id="sharpsplat_dropzone_main">Drop a single image here</div>
+                        <div class="sharpsplat-dropzone-sub" id="sharpsplat_dropzone_sub">or click Browse to select</div>
                         <input type="file" id="sharpsplat_input_file" accept="image/*" hidden>
                     </div>
                     <div class="sharpsplat-input-controls">
