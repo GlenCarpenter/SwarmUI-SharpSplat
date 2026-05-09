@@ -89,6 +89,17 @@ class SharpSplatTabManager {
         if (camReset) {
             camReset.onclick = () => this.resetCamera();
         }
+        // Restore and persist the invert-controls toggle.
+        let invertToggle = document.getElementById('sharpsplat_setting_invert_controls');
+        if (invertToggle) {
+            invertToggle.checked = localStorage.getItem('sharpsplat_invert_controls') === 'true';
+            invertToggle.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_invert_controls', invertToggle.checked ? 'true' : 'false');
+                if (this._viewer && this._viewer.controls) {
+                    this._viewer.controls.rotateSpeed = invertToggle.checked ? -0.5 : 0.5;
+                }
+            });
+        }
         // Accordion toggles — restore open state from localStorage.
         for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings']) {
             let acc = document.getElementById(id);
@@ -763,6 +774,10 @@ class SharpSplatTabManager {
 
             if (this._viewer.controls) {
                 this._viewer.controls.enabled = true;
+                let _invertToggle = document.getElementById('sharpsplat_setting_invert_controls');
+                if (_invertToggle && _invertToggle.checked) {
+                    this._viewer.controls.rotateSpeed = -0.5;
+                }
             }
 
             let _canvas = wrap.querySelector('canvas');
