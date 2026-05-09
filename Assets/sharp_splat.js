@@ -254,6 +254,8 @@ class SharpSplatTabManager {
         if (!dropzone || !fileInput || !browseBtn || !clearBtn || !generateBtn) {
             return;
         }
+        // Cache the preview img element so it survives innerHTML clears.
+        this._previewImgEl = document.getElementById('sharpsplat_input_preview');
 
         // Apply initial mode from restored setting.
         this._applyDropzoneMode();
@@ -410,7 +412,7 @@ class SharpSplatTabManager {
         let nameLabel = document.getElementById('sharpsplat_input_name');
         let generateBtn = document.getElementById('sharpsplat_generate_btn');
         let previewWrap = document.getElementById('sharpsplat_input_preview_wrap');
-        let previewImg = document.getElementById('sharpsplat_input_preview');
+        let previewImg = this._previewImgEl || document.getElementById('sharpsplat_input_preview');
         let isVggt = this._getModel() === 'vggt';
 
         if (isVggt) {
@@ -422,6 +424,9 @@ class SharpSplatTabManager {
             if (previewWrap) {
                 if (count > 0) {
                     previewWrap.classList.add('active');
+                    if (previewImg && previewImg.parentNode === previewWrap) {
+                        previewWrap.removeChild(previewImg);
+                    }
                     previewWrap.innerHTML = '';
                     let strip = createDiv(null, 'sharpsplat-multi-preview-strip');
                     for (let i = 0; i < count; i++) {
@@ -449,6 +454,9 @@ class SharpSplatTabManager {
                 }
                 else {
                     previewWrap.classList.remove('active');
+                    if (previewImg && previewImg.parentNode === previewWrap) {
+                        previewWrap.removeChild(previewImg);
+                    }
                     previewWrap.innerHTML = '';
                 }
             }
