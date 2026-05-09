@@ -139,6 +139,20 @@ The tag is available in the prompt autocomplete — type `<sharpsplat` to see it
 3. Click any entry to load it into the viewer.
 4. Use **↺ Refresh** to update the list after generating new splats.
 
+### Exporting the canvas
+
+The **Export Canvas** section in the Splat Viewer sidebar lets you capture the current rendered frame as a PNG.
+
+1. Load a splat and position the camera as desired.
+2. Open **Export Canvas** in the sidebar and click **Export Canvas**.
+3. Choose a crop ratio from the **Resolution** dropdown:
+   - **None (Full)** — captures the entire canvas at its current resolution.
+   - **Aspect ratio presets** (1:1, 4:3, 16:9, etc.) — the largest centered crop of that ratio.
+   - **Custom** — enter your own width and height; the largest centered crop matching that ratio is used.
+4. A blue overlay on the canvas shows the region that will be captured.
+5. Click **Save to Outputs** to save the PNG to `Output/local/splats_export/` with a filename of `splatname_timestamp.png`, or **Download** to download it directly to your browser's download folder.
+6. Click **Cancel** to dismiss without exporting.
+
 ### Viewer controls
 
 | Action | Control |
@@ -151,10 +165,6 @@ The tag is available in the prompt autocomplete — type `<sharpsplat` to see it
 
 ## Roadmap
 
-- Export frame from splat
-  - Send to edit
-  - Download
-  - Crop
 - Export `PLY` as `SPLAT` or `KSPLAT`
 - Export `SPLAT` as `KSPLAT`
 
