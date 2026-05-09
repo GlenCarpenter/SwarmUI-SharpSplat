@@ -57,6 +57,12 @@ class SharpSplatTabManager {
         this._initialCameraState = null;
         /** @type {number} Incremented each time a new viewer is created so orphaned RAF loops self-terminate. */
         this._cameraSyncGen = 0;
+        /** @type {string|null} Base64 image data selected in the sidebar dropzone. */
+        this._inputImageBase64 = null;
+        /** @type {string|null} Selected sidebar image filename. */
+        this._inputImageName = null;
+        /** @type {string|null} Data URL used for sidebar thumbnail preview. */
+        this._inputImagePreviewDataUrl = null;
     }
 
     /**
@@ -82,7 +88,7 @@ class SharpSplatTabManager {
             camReset.onclick = () => this.resetCamera();
         }
         // Accordion toggles — restore open state from localStorage.
-        for (let id of ['sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings']) {
+        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings']) {
             let acc = document.getElementById(id);
             if (!acc) {
                 continue;
@@ -123,6 +129,7 @@ class SharpSplatTabManager {
                 syncFormatParam();
             });
         }
+        this._setupInputDropzone();
         // Apply on Enter for any camera input; stop propagation so viewer never sees these keys.
         for (let input of document.querySelectorAll('.sharpsplat-camera-input')) {
             input.addEventListener('keydown', (e) => {
@@ -152,6 +159,147 @@ class SharpSplatTabManager {
                 this.refreshList();
                 this._loadModule();
             });
+        }
+    }
+
+    /**
+     * Wires drop/click input handlers for the single-image dropzone.
+     */
+    _setupInputDropzone() {
+        let dropzone = document.getElementById('sharpsplat_dropzone');
+        let fileInput = document.getElementById('sharpsplat_input_file');
+        let browseBtn = document.getElementById('sharpsplat_input_browse');
+        let clearBtn = document.getElementById('sharpsplat_input_clear');
+        let generateBtn = document.getElementById('sharpsplat_generate_btn');
+        if (!dropzone || !fileInput || !browseBtn || !clearBtn || !generateBtn) {
+            return;
+        }
+
+        let preventEvent = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        for (let eventName of ['dragenter', 'dragover']) {
+            dropzone.addEventListener(eventName, (e) => {
+                preventEvent(e);
+                dropzone.classList.add('drag-active');
+            });
+        }
+        for (let eventName of ['dragleave', 'dragend', 'drop']) {
+            dropzone.addEventListener(eventName, (e) => {
+                preventEvent(e);
+                dropzone.classList.remove('drag-active');
+            });
+        }
+
+        dropzone.addEventListener('click', () => {
+            fileInput.click();
+        });
+        browseBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', async () => {
+            if (!fileInput.files || fileInput.files.length < 1) {
+                return;
+            }
+            await this._setInputImageFromFile(fileInput.files[0]);
+            fileInput.value = '';
+        });
+
+        dropzone.addEventListener('drop', async (e) => {
+            let files = e.dataTransfer && e.dataTransfer.files;
+            if (!files || files.length < 1) {
+                return;
+            }
+            await this._setInputImageFromFile(files[0]);
+        });
+
+        clearBtn.addEventListener('click', () => {
+            this._inputImageBase64 = null;
+            this._inputImageName = null;
+            this._inputImagePreviewDataUrl = null;
+            this._updateInputImageState();
+        });
+
+        generateBtn.addEventListener('click', async () => {
+            if (!this._inputImageBase64) {
+                return;
+            }
+            let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
+            await sharpSplatGenerateFromBase64(this._inputImageBase64, filenamePrefix);
+        });
+
+        this._updateInputImageState();
+    }
+
+    /**
+     * Reads the selected file as base64 and updates input UI state.
+     * @param {File} file
+     */
+    async _setInputImageFromFile(file) {
+        if (!file || !file.type || !file.type.startsWith('image/')) {
+            showError('SharpSplat: Please choose an image file.');
+            return;
+        }
+        try {
+            let imageData = await new Promise((resolve, reject) => {
+                let reader = new FileReader();
+                reader.onloadend = () => {
+                    let dataUrl = typeof reader.result === 'string' ? reader.result : '';
+                    let commaIndex = dataUrl.indexOf(',');
+                    if (commaIndex < 0) {
+                        reject(new Error('Invalid image data.'));
+                        return;
+                    }
+                    resolve({
+                        dataUrl: dataUrl,
+                        base64Data: dataUrl.slice(commaIndex + 1)
+                    });
+                };
+                reader.onerror = () => {
+                    reject(new Error('Failed to read dropped image data.'));
+                };
+                reader.readAsDataURL(file);
+            });
+            this._inputImageBase64 = imageData.base64Data;
+            this._inputImageName = file.name || 'image';
+            this._inputImagePreviewDataUrl = imageData.dataUrl;
+            this._updateInputImageState();
+        }
+        catch (err) {
+            showError('SharpSplat: ' + err.message);
+        }
+    }
+
+    /**
+     * Updates the sidebar input controls based on whether an image is selected.
+     */
+    _updateInputImageState() {
+        let nameLabel = document.getElementById('sharpsplat_input_name');
+        let generateBtn = document.getElementById('sharpsplat_generate_btn');
+        let previewWrap = document.getElementById('sharpsplat_input_preview_wrap');
+        let previewImg = document.getElementById('sharpsplat_input_preview');
+        if (nameLabel) {
+            if (this._inputImageName) {
+                nameLabel.textContent = 'Selected: ' + this._inputImageName;
+            }
+            else {
+                nameLabel.textContent = 'No image selected.';
+            }
+        }
+        if (previewWrap && previewImg) {
+            if (this._inputImagePreviewDataUrl) {
+                previewImg.src = this._inputImagePreviewDataUrl;
+                previewWrap.classList.add('active');
+            }
+            else {
+                previewImg.removeAttribute('src');
+                previewWrap.classList.remove('active');
+            }
+        }
+        if (generateBtn) {
+            generateBtn.disabled = !this._inputImageBase64;
         }
     }
 
@@ -496,39 +644,30 @@ class SharpSplatTabManager {
 let sharpSplatTab = new SharpSplatTabManager();
 
 /**
- * Handles the "Generate 3D Splat" button click.
- * Tries the ComfyUI-backed route first (SharpGenerateSplatViaComfy), which queues
- * generation through the Comfy backend. Falls back to the direct subprocess route
- * (SharpGenerateSplat) when no ComfyUI backend is available.
- * @param {string} src - Image URL or data-URL, as provided by registerMediaButton.
+ * Converts a filename or URL basename to a safe filename prefix.
+ * @param {string} rawName
  */
-async function handleSharpSplatGenerate(src) {
-    let base64Data;
-    try {
-        base64Data = await sharpSplatGetImageBase64(src);
+function sharpSplatGetFilenamePrefix(rawName) {
+    if (!rawName) {
+        return 'output';
     }
-    catch (err) {
-        showError('SharpSplat: Failed to read the current image. ' + err.message);
-        return;
+    let base = rawName.split('/').pop().split('\\').pop();
+    let dot = base.lastIndexOf('.');
+    if (dot > 0) {
+        return base.slice(0, dot);
     }
-    if (!base64Data) {
-        showError('SharpSplat: No image available. Generate an image first.');
-        return;
-    }
-    // Derive a filename prefix from the source URL (strip path and extension).
-    let filenamePrefix = 'output';
-    try {
-        let urlPath = src.startsWith('data:') ? '' : new URL(src, window.location.href).pathname;
-        if (urlPath) {
-            let base = urlPath.split('/').pop();
-            let dot = base.lastIndexOf('.');
-            filenamePrefix = dot > 0 ? base.slice(0, dot) : base;
-        }
-    }
-    catch (_) {}
+    return base;
+}
+
+/**
+ * Generates a splat from base64 image data and loads it in the viewer.
+ * @param {string} base64Data
+ * @param {string} filenamePrefix
+ */
+async function sharpSplatGenerateFromBase64(base64Data, filenamePrefix) {
     let outputFormatSelect = document.getElementById('sharpsplat_setting_output_format');
     let outputFormat = outputFormatSelect ? outputFormatSelect.value : 'ply';
-    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix, outputFormat: outputFormat };
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix || 'output', outputFormat: outputFormat };
     /**
      * Calls a given API endpoint and returns a Promise resolving to the response.
      * @param {string} endpoint
@@ -589,6 +728,38 @@ async function handleSharpSplatGenerate(src) {
         console.error('SharpSplat error:', err);
         showError('SharpSplat: ' + err.message);
     }
+}
+
+/**
+ * Handles the "Generate 3D Splat" button click.
+ * Tries the ComfyUI-backed route first (SharpGenerateSplatViaComfy), which queues
+ * generation through the Comfy backend. Falls back to the direct subprocess route
+ * (SharpGenerateSplat) when no ComfyUI backend is available.
+ * @param {string} src - Image URL or data-URL, as provided by registerMediaButton.
+ */
+async function handleSharpSplatGenerate(src) {
+    let base64Data;
+    try {
+        base64Data = await sharpSplatGetImageBase64(src);
+    }
+    catch (err) {
+        showError('SharpSplat: Failed to read the current image. ' + err.message);
+        return;
+    }
+    if (!base64Data) {
+        showError('SharpSplat: No image available. Generate an image first.');
+        return;
+    }
+    // Derive a filename prefix from the source URL.
+    let filenamePrefix = 'output';
+    try {
+        let urlPath = src.startsWith('data:') ? '' : new URL(src, window.location.href).pathname;
+        if (urlPath) {
+            filenamePrefix = sharpSplatGetFilenamePrefix(urlPath);
+        }
+    }
+    catch (_) {}
+    await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
 }
 
 // Wire up UI and register the image viewer button once the page is ready.

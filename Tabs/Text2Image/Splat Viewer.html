@@ -22,6 +22,30 @@
                 </div>
             </div>
         </div>
+        <!-- Input accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_input">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_input_btn">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Input Image
+            </button>
+            <div class="sharpsplat-accordion-body">
+                <div class="sharpsplat-input-wrap">
+                    <div class="sharpsplat-dropzone" id="sharpsplat_dropzone">
+                        <div class="sharpsplat-dropzone-main">Drop a single image here</div>
+                        <div class="sharpsplat-dropzone-sub">or click Browse to select</div>
+                        <input type="file" id="sharpsplat_input_file" accept="image/*" hidden>
+                    </div>
+                    <div class="sharpsplat-input-controls">
+                        <button class="basic-button" id="sharpsplat_input_browse">Browse</button>
+                        <button class="basic-button" id="sharpsplat_input_clear">Clear</button>
+                    </div>
+                    <div class="sharpsplat-input-preview" id="sharpsplat_input_preview_wrap">
+                        <img class="sharpsplat-input-preview-image" id="sharpsplat_input_preview" alt="Selected input preview">
+                    </div>
+                    <div class="sharpsplat-input-name" id="sharpsplat_input_name">No image selected.</div>
+                    <button class="basic-button" id="sharpsplat_generate_btn" disabled>Generate Splat</button>
+                </div>
+            </div>
+        </div>
         <!-- Camera accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_camera">
             <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn">

@@ -371,6 +371,94 @@
     border-color: #7bb3f0;
 }
 
+/* Input image section */
+.sharpsplat-input-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+}
+
+.sharpsplat-dropzone {
+    border: 1px dashed #555;
+    border-radius: 4px;
+    background: #202020;
+    padding: 12px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.sharpsplat-dropzone:hover {
+    border-color: #7bb3f0;
+    background: #252d36;
+}
+
+.sharpsplat-dropzone.drag-active {
+    border-color: #7bb3f0;
+    background: #1f344a;
+}
+
+.sharpsplat-dropzone-main {
+    color: #c7d7ea;
+    font-size: 12px;
+}
+
+.sharpsplat-dropzone-sub {
+    color: #8f9aab;
+    font-size: 11px;
+    margin-top: 4px;
+}
+
+.sharpsplat-input-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.sharpsplat-input-controls .basic-button {
+    flex: 1;
+    font-size: 12px;
+    padding: 5px 8px;
+}
+
+.sharpsplat-input-preview {
+    display: none;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background: #171717;
+    padding: 4px;
+}
+
+.sharpsplat-input-preview.active {
+    display: block;
+}
+
+.sharpsplat-input-preview-image {
+    display: block;
+    width: 100%;
+    max-height: 140px;
+    object-fit: contain;
+    border-radius: 3px;
+}
+
+.sharpsplat-input-name {
+    color: #aaa;
+    font-size: 11px;
+    line-height: 1.2;
+    word-break: break-all;
+}
+
+#sharpsplat_generate_btn {
+    width: 100%;
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+#sharpsplat_generate_btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 /* Sidebar footer (no longer used, kept for safety) */
 .sharpsplat-sidebar-footer {
     flex-shrink: 0;
