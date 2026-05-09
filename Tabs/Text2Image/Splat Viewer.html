@@ -111,6 +111,51 @@
                 </div>
             </div>
         </div>
+        <!-- Export Canvas accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_export">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Export Canvas
+            </button>
+            <div class="sharpsplat-accordion-body">
+                <div class="sharpsplat-export-wrap">
+                    <button class="basic-button" id="sharpsplat_export_btn">Export Canvas</button>
+                    <!-- Shown only during export mode -->
+                    <div id="sharpsplat_export_actions" style="display:none">
+                        <div class="sharpsplat-settings-row">
+                            <label class="sharpsplat-settings-label" for="sharpsplat_export_resolution">Resolution</label>
+                            <select class="sharpsplat-settings-select" id="sharpsplat_export_resolution">
+                                <option value="none">None (Full)</option>
+                                <option value="1:1">1:1</option>
+                                <option value="4:3">4:3</option>
+                                <option value="3:2">3:2</option>
+                                <option value="8:5">8:5</option>
+                                <option value="16:9">16:9</option>
+                                <option value="21:9">21:9</option>
+                                <option value="3:4">3:4</option>
+                                <option value="2:3">2:3</option>
+                                <option value="5:8">5:8</option>
+                                <option value="9:16">9:16</option>
+                                <option value="9:21">9:21</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+                        <div class="sharpsplat-export-custom" id="sharpsplat_export_custom_dims" style="display:none">
+                            <div class="sharpsplat-camera-row">
+                                <label class="sharpsplat-camera-label">W</label>
+                                <input class="sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_w" min="1" step="1" value="1920">
+                            </div>
+                            <div class="sharpsplat-camera-row">
+                                <label class="sharpsplat-camera-label">H</label>
+                                <input class="sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_h" min="1" step="1" value="1080">
+                            </div>
+                        </div>
+                        <button class="basic-button" id="sharpsplat_export_save_btn">Save to Outputs</button>
+                        <button class="basic-button" id="sharpsplat_export_download_btn">Download</button>
+                        <button class="basic-button sharpsplat-export-cancel-btn" id="sharpsplat_export_cancel_btn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- Splats accordion -->
         <div class="sharpsplat-accordion sharpsplat-accordion-flex" id="sharpsplat_acc_splats">
             <button class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn">
@@ -129,5 +174,12 @@
             Select a splat from the list, or click &ldquo;Generate 3D Splat&rdquo; on an image in the Generate tab.
         </div>
         <div class="sharpsplat-canvas-wrap" id="sharpsplat_canvas_wrap"></div>
+        <!-- Export crop indicator — shown over the canvas during export mode.
+             Kept outside canvas-wrap because wrap.innerHTML is cleared on each splat load. -->
+        <div class="sharpsplat-export-overlay" id="sharpsplat_export_overlay" style="display:none" aria-hidden="true">
+            <div class="sharpsplat-export-viewport" id="sharpsplat_export_viewport">
+                <div class="sharpsplat-export-viewport-box" id="sharpsplat_export_viewport_box"></div>
+            </div>
+        </div>
     </div>
 </div>

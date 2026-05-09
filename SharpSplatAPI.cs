@@ -42,6 +42,7 @@ public static class SharpSplatAPI
         API.RegisterAPICall(VGGTGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpDeleteSplat, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(SharpSaveCanvasExport, true, SharpSplatPermissions.PermGenerateSplat);
     }
 
     /// <summary>Guards one-time dependency installation per process lifetime.</summary>
@@ -728,5 +729,62 @@ public static class SharpSplatAPI
         File.Delete(splatPath);
         Logs.Info($"SharpSplat: Deleted splat '{safeFilename}' for user '{session.User.UserID}'.");
         return Task.FromResult(new JObject { ["success"] = true });
+    }
+
+    /// <summary>
+    /// Saves a base64-encoded PNG image captured from the canvas to
+    /// <c>Output/local/splats_export/</c> with the provided filename.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imageBase64">Base64-encoded PNG image data.</param>
+    /// <param name="filename">Desired output filename (e.g. "mysplat_20260509T120000.png").</param>
+    public static async Task<JObject> SharpSaveCanvasExport(Session session, string imageBase64, string filename)
+    {
+        if (string.IsNullOrWhiteSpace(imageBase64))
+        {
+            return new JObject { ["success"] = false, ["error"] = "No image data provided." };
+        }
+        // Sanitise the filename to only safe characters and enforce .png extension.
+        string rawBase = filename ?? "canvas_export";
+        // Strip any extension the caller supplied — we always save as .png.
+        int dotIdx = rawBase.LastIndexOf('.');
+        if (dotIdx > 0)
+        {
+            rawBase = rawBase[..dotIdx];
+        }
+        string safeBase = string.Concat(rawBase.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_'));
+        if (string.IsNullOrWhiteSpace(safeBase))
+        {
+            safeBase = "canvas_export";
+        }
+        string safeFilename = safeBase + ".png";
+        byte[] imageBytes;
+        try
+        {
+            imageBytes = Convert.FromBase64String(imageBase64);
+        }
+        catch (FormatException)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
+        }
+        string exportDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats_export");
+        Directory.CreateDirectory(exportDir);
+        string outputPath = Path.Combine(exportDir, safeFilename);
+        // Deduplicate by appending a counter if the file already exists.
+        int counter = 0;
+        while (File.Exists(outputPath))
+        {
+            counter++;
+            outputPath = Path.Combine(exportDir, $"{safeBase}_{counter}.png");
+            safeFilename = Path.GetFileName(outputPath);
+        }
+        // Confirm the resolved path is still inside the export directory.
+        if (!Path.GetFullPath(outputPath).StartsWith(Path.GetFullPath(exportDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid filename." };
+        }
+        await File.WriteAllBytesAsync(outputPath, imageBytes);
+        Logs.Info($"SharpSplat: Canvas export saved to '{outputPath}' ({imageBytes.Length} bytes).");
+        return new JObject { ["success"] = true, ["filename"] = safeFilename };
     }
 }

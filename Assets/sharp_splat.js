@@ -101,14 +101,14 @@ class SharpSplatTabManager {
             });
         }
         // Accordion toggles — restore open state from localStorage.
-        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings']) {
+        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings', 'sharpsplat_acc_export']) {
             let acc = document.getElementById(id);
             if (!acc) {
                 continue;
             }
             let stored = localStorage.getItem(id);
-            // Camera and Splats open by default; Settings closed by default.
-            let isOpen = stored !== null ? stored === 'true' : id !== 'sharpsplat_acc_settings';
+            // Camera and Splats open by default; Settings and Export Canvas closed by default.
+            let isOpen = stored !== null ? stored === 'true' : (id !== 'sharpsplat_acc_settings' && id !== 'sharpsplat_acc_export');
             acc.classList.toggle('open', isOpen);
             let btn = acc.querySelector('.sharpsplat-accordion-header');
             if (btn) {
@@ -118,6 +118,7 @@ class SharpSplatTabManager {
                 });
             }
         }
+        this._setupExportCanvas();
         // Restore and persist the auto-navigate toggle.
         let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
         if (autoNavToggle) {
@@ -238,6 +239,285 @@ class SharpSplatTabManager {
         let padRow = document.getElementById('sharpsplat_row_pad_to_square');
         if (padRow) {
             padRow.style.display = isVggt ? '' : 'none';
+        }
+    }
+
+    /**
+     * Wires up export canvas UI — resolution dropdown, custom dims, and overlay buttons.
+     */
+    _setupExportCanvas() {
+        let exportBtn = document.getElementById('sharpsplat_export_btn');
+        let resolutionSel = document.getElementById('sharpsplat_export_resolution');
+        let customDims = document.getElementById('sharpsplat_export_custom_dims');
+        let overlay = document.getElementById('sharpsplat_export_overlay');
+        let cancelBtn = document.getElementById('sharpsplat_export_cancel_btn');
+        let saveBtn = document.getElementById('sharpsplat_export_save_btn');
+        let dlBtn = document.getElementById('sharpsplat_export_download_btn');
+        if (!exportBtn || !resolutionSel || !overlay) {
+            return;
+        }
+        // Show/hide custom dimension inputs.
+        resolutionSel.addEventListener('change', () => {
+            if (customDims) {
+                customDims.style.display = resolutionSel.value === 'custom' ? '' : 'none';
+            }
+            // Update viewport box if overlay is currently visible.
+            if (overlay.style.display !== 'none') {
+                this._updateExportViewportBox();
+            }
+        });
+        // Stop propagation on custom dimension inputs so the viewer never sees these keys.
+        // Also update the viewport box live as the user types.
+        for (let input of [document.getElementById('sharpsplat_export_custom_w'), document.getElementById('sharpsplat_export_custom_h')]) {
+            if (input) {
+                input.addEventListener('keydown', (e) => { e.stopPropagation(); });
+                input.addEventListener('input', () => {
+                    if (overlay.style.display !== 'none') {
+                        this._updateExportViewportBox();
+                    }
+                });
+            }
+        }
+        exportBtn.addEventListener('click', () => {
+            if (!this._viewer) {
+                showError('SharpSplat: Load a splat first before exporting.');
+                return;
+            }
+            this._showExportOverlay();
+        });
+        cancelBtn.addEventListener('click', () => {
+            this._hideExportOverlay();
+        });
+        // Close overlay on Escape.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.style.display !== 'none') {
+                this._hideExportOverlay();
+            }
+        });
+        saveBtn.addEventListener('click', async () => {
+            await this._doExportCanvas(true);
+        });
+        dlBtn.addEventListener('click', async () => {
+            await this._doExportCanvas(false);
+        });
+    }
+
+    /**
+     * Shows the export overlay and positions the viewport box.
+     */
+    _showExportOverlay() {
+        let overlay = document.getElementById('sharpsplat_export_overlay');
+        let exportBtn = document.getElementById('sharpsplat_export_btn');
+        let actions = document.getElementById('sharpsplat_export_actions');
+        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (!overlay) {
+            return;
+        }
+        // Position the overlay to cover only the canvas-wrap, not the status bar above it.
+        if (canvasWrap && canvasWrap.parentElement) {
+            let panelRect = canvasWrap.parentElement.getBoundingClientRect();
+            let wrapRect = canvasWrap.getBoundingClientRect();
+            overlay.style.top = Math.round(wrapRect.top - panelRect.top) + 'px';
+            overlay.style.left = '0';
+            overlay.style.right = '0';
+            overlay.style.bottom = '0';
+            overlay.style.height = '';
+        }
+        overlay.style.display = 'flex';
+        if (exportBtn) {
+            exportBtn.style.display = 'none';
+        }
+        if (actions) {
+            actions.style.display = '';
+        }
+        this._updateExportViewportBox();
+    }
+
+    /**
+     * Hides the export overlay.
+     */
+    _hideExportOverlay() {
+        let overlay = document.getElementById('sharpsplat_export_overlay');
+        let exportBtn = document.getElementById('sharpsplat_export_btn');
+        let actions = document.getElementById('sharpsplat_export_actions');
+        if (overlay) {
+            overlay.style.display = 'none';
+        }
+        if (exportBtn) {
+            exportBtn.style.display = '';
+        }
+        if (actions) {
+            actions.style.display = 'none';
+        }
+    }
+
+    /**
+     * Computes the crop rectangle (in canvas pixels) for the current resolution selection.
+     * Returns {x, y, w, h} relative to the canvas top-left.
+     * @param {HTMLCanvasElement} canvas
+     */
+    _computeExportCropRect(canvas) {
+        let cw = canvas.width;
+        let ch = canvas.height;
+        let sel = document.getElementById('sharpsplat_export_resolution');
+        let value = sel ? sel.value : 'none';
+        if (value === 'none') {
+            return { x: 0, y: 0, w: cw, h: ch };
+        }
+        let targetAspect;
+        if (value === 'custom') {
+            let wInput = document.getElementById('sharpsplat_export_custom_w');
+            let hInput = document.getElementById('sharpsplat_export_custom_h');
+            let cw2 = parseInt(wInput ? wInput.value : 1920) || 1920;
+            let ch2 = parseInt(hInput ? hInput.value : 1080) || 1080;
+            targetAspect = cw2 / ch2;
+        }
+        else {
+            let parts = value.split(':');
+            targetAspect = parseInt(parts[0]) / parseInt(parts[1]);
+        }
+        let canvasAspect = cw / ch;
+        let cropW, cropH;
+        if (targetAspect > canvasAspect) {
+            // Letterbox — constrained by width.
+            cropW = cw;
+            cropH = Math.round(cw / targetAspect);
+        }
+        else {
+            // Pillarbox — constrained by height.
+            cropH = ch;
+            cropW = Math.round(ch * targetAspect);
+        }
+        let x = Math.round((cw - cropW) / 2);
+        let y = Math.round((ch - cropH) / 2);
+        return { x, y, w: cropW, h: cropH };
+    }
+
+    /**
+     * Repositions and resizes the viewport box to reflect the current crop region
+     * projected from canvas pixels onto the overlay/display coordinates.
+     */
+    _updateExportViewportBox() {
+        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
+        let viewportDiv = document.getElementById('sharpsplat_export_viewport');
+        let viewportBox = document.getElementById('sharpsplat_export_viewport_box');
+        if (!canvasWrap || !viewportDiv || !viewportBox) {
+            return;
+        }
+        let canvas = canvasWrap.querySelector('canvas');
+        if (!canvas) {
+            viewportBox.style.display = 'none';
+            return;
+        }
+        viewportBox.style.display = '';
+        let crop = this._computeExportCropRect(canvas);
+        // Scale from canvas pixels to display pixels.
+        let displayW = canvasWrap.clientWidth;
+        let displayH = canvasWrap.clientHeight;
+        let scaleX = displayW / canvas.width;
+        let scaleY = displayH / canvas.height;
+        let boxLeft = Math.round(crop.x * scaleX);
+        let boxTop = Math.round(crop.y * scaleY);
+        let boxW = Math.round(crop.w * scaleX);
+        let boxH = Math.round(crop.h * scaleY);
+        viewportBox.style.left = boxLeft + 'px';
+        viewportBox.style.top = boxTop + 'px';
+        viewportBox.style.width = boxW + 'px';
+        viewportBox.style.height = boxH + 'px';
+    }
+
+    /**
+     * Captures the current canvas, crops to the selected region, and either
+     * saves it to the server outputs or triggers a browser download.
+     * @param {boolean} saveToServer - true = Save to Outputs; false = Download.
+     */
+    async _doExportCanvas(saveToServer) {
+        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (!canvasWrap) {
+            return;
+        }
+        let canvas = canvasWrap.querySelector('canvas');
+        if (!canvas) {
+            showError('SharpSplat: No canvas found. Load a splat first.');
+            return;
+        }
+        // Capture the canvas — schedule within a rAF so the frame buffer is populated.
+        let dataUrl = await new Promise((resolve) => {
+            requestAnimationFrame(() => {
+                try {
+                    let raw = canvas.toDataURL('image/png');
+                    resolve(raw);
+                }
+                catch (e) {
+                    resolve(null);
+                }
+            });
+        });
+        if (!dataUrl || dataUrl === 'data:,') {
+            showError('SharpSplat: Canvas capture returned empty data. The viewer may need preserveDrawingBuffer enabled.');
+            return;
+        }
+        // Crop the captured image using an offscreen 2D canvas.
+        let img = new Image();
+        img.src = dataUrl;
+        await new Promise((resolve) => { img.onload = resolve; });
+        let crop = this._computeExportCropRect(canvas);
+        let offscreen = document.createElement('canvas');
+        offscreen.width = crop.w;
+        offscreen.height = crop.h;
+        let ctx = offscreen.getContext('2d');
+        ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, 0, 0, crop.w, crop.h);
+        let croppedDataUrl = offscreen.toDataURL('image/png');
+        // Build filename from the loaded splat name + timestamp.
+        let splatName = this._getCurrentSplatName();
+        let timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 15);
+        let filename = (splatName ? splatName + '_' : 'canvas_') + timestamp + '.png';
+        if (saveToServer) {
+            let base64 = croppedDataUrl.split(',')[1];
+            try {
+                await new Promise((resolve, reject) => {
+                    genericRequest('SharpSaveCanvasExport', { imageBase64: base64, filename: filename }, (data) => {
+                        if (data.success) {
+                            resolve(data);
+                        }
+                        else {
+                            reject(new Error(data.error || 'Save failed.'));
+                        }
+                    });
+                });
+                this._hideExportOverlay();
+            }
+            catch (err) {
+                showError('SharpSplat Export: ' + err.message);
+            }
+        }
+        else {
+            // Browser download.
+            let link = document.createElement('a');
+            link.href = croppedDataUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            this._hideExportOverlay();
+        }
+    }
+
+    /**
+     * Returns a safe filename prefix derived from the currently loaded splat URL/filename.
+     */
+    _getCurrentSplatName() {
+        if (!this._currentUrl) {
+            return 'canvas';
+        }
+        try {
+            let pathname = new URL(this._currentUrl, window.location.href).pathname;
+            let base = pathname.split('/').pop();
+            let dot = base.lastIndexOf('.');
+            return dot > 0 ? base.slice(0, dot) : base;
+        }
+        catch (_) {
+            return 'canvas';
         }
     }
 
