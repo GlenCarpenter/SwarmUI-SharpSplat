@@ -6,6 +6,9 @@ Two reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
 - **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Takes **multiple images** of the same scene from different angles and produces a denser, more accurate point cloud.
+- **InstantSplat** — NVIDIA's [InstantSplat](https://github.com/NVlabs/InstantSplat). Takes **multiple images** and uses MASt3R geometry initialisation to produce a coloured point cloud.
+
+> **Note:** Both VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
 
 Results are saved as `.ply` (default) or `.splat` and rendered interactively in a dedicated **Splat Viewer** tab powered by [GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D/).
 
@@ -111,7 +114,7 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 | Setting | Description |
 |---|---|
 | **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
-| **Reconstruction model** | `ml-sharp` (single image, fast) or `VGGT` (multiple images, denser). |
+| **Reconstruction model** | `ml-sharp` (single image, fast), `VGGT` (multiple images, denser point cloud), or `InstantSplat` (multiple images, MASt3R point cloud). |
 | **Pad images to square** | *(VGGT only)* Resize each input image to fit within a 518 × 518 square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
 
