@@ -5,7 +5,7 @@ A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns im
 Two reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
-- **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Takes **multiple images** of the same scene from different angles and produces a denser, more accurate point cloud.
+- **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Works with a **single image or multiple images** of the same scene from different angles; more views produce a denser, more accurate point cloud.
 - **InstantSplat** — NVIDIA's [InstantSplat](https://github.com/NVlabs/InstantSplat). Takes **multiple images** and uses MASt3R geometry initialisation to produce a coloured point cloud.
 
 > **Note:** Both VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
@@ -17,31 +17,31 @@ Results are saved as `.ply` (default) or `.splat` and rendered interactively in 
 ## How It Works
 
 ```
-Single image (ml-sharp)         Multiple images (VGGT)
-        │                               │
-        ▼                               ▼
-[Generate 3D Splat button]    [Splat Viewer → drop images]
-        │                               │
-        └───────────┬───────────────────┘
-                    ▼  (base64 → server)
-           SharpSplat API (C#)
-                    │
-           ┌────────┴────────┐
-           ▼                 ▼
-        ml-sharp           VGGT
-    (single image)    (multi-image)
-           │                 │
-           └────────┬────────┘
-                    ▼
-               .ply output
-                    │
-              [if format = splat]
-                    ▼
-               ply2splat → .splat
-               saved to Output/{user}/splats/
-                    │
-                    ▼
-         Splat Viewer tab (WebGL)
+Single image (ml-sharp)      1+ images (VGGT)     2+ images (InstantSplat)
+        │                          │                        │
+        ▼                          ▼                        ▼
+[Generate 3D Splat button]    [Splat Viewer → drop images & select model]
+        │                          │                        │
+        └──────────────┬───────────┴────────────────────────┘
+                       ▼  (base64 → server)
+              SharpSplat API (C#)
+                       │
+           ┌───────────┼───────────┐
+           ▼           ▼           ▼
+        ml-sharp      VGGT     InstantSplat
+     (single img)  (1+ imgs)   (2+ imgs, MASt3R)
+           │           │           │
+           └───────────┴───────────┘
+                       ▼
+                  .ply output
+                       │
+                 [if format = splat]
+                       ▼
+                  ply2splat → .splat
+                  saved to Output/{user}/splats/
+                       │
+                       ▼
+            Splat Viewer tab (WebGL)
 ```
 
 ---
@@ -59,6 +59,7 @@ Python dependencies are installed automatically on first use:
 | [ml-sharp](https://github.com/apple/ml-sharp) | Monocular 3DGS reconstruction (single image) |
 | [VGGT](https://github.com/facebookresearch/vggt) | Multi-view 3D reconstruction |
 | [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Downloads VGGT model weights (~1 GB, first run only) |
+| [InstantSplat](https://github.com/NVlabs/InstantSplat) | MASt3R-based multi-view reconstruction (cloned from GitHub on first use, ~1.2 GB checkpoint downloaded automatically) |
 | [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` conversion (only needed when output format is `.splat`) |
 
 ---
@@ -93,7 +94,7 @@ You can also drop or browse to an image in the **Splat Viewer** sidebar directly
 
 ### Generating a splat from multiple images (VGGT)
 
-VGGT produces significantly better results than ml-sharp when you supply multiple photos of the same subject taken from different angles (like a photogrammetry capture).
+VGGT can work from a **single image** but produces significantly better results with multiple photos of the same subject taken from different angles (like a photogrammetry capture).
 
 1. Open the **Splat Viewer** tab.
 2. In **Settings**, change **Reconstruction model** to **VGGT**.
@@ -109,6 +110,23 @@ VGGT produces significantly better results than ml-sharp when you supply multipl
 - Avoid motion blur and reflective surfaces.
 - Images are resized to 518 × 518 before inference. If your images are not square, enable **Pad images to square** in Settings (see below) to preserve the full frame.
 
+### Generating a splat from multiple images (InstantSplat)
+
+InstantSplat uses NVIDIA's MASt3R geometry initialisation pipeline and **requires at least 2 images**. On first use it clones the InstantSplat repository and downloads a ~1.2 GB MASt3R checkpoint automatically.
+
+1. Open the **Splat Viewer** tab.
+2. In **Settings**, change **Reconstruction model** to **InstantSplat**.
+3. The dropzone in the **Input Image** section will accept multiple files.
+4. Drop at least 2 images onto the dropzone, or click **Browse** to select them.  
+   Each added image appears as a thumbnail — click **×** on a thumbnail to remove it.
+5. Click **Generate Splat**.
+6. Inference runs through the ComfyUI backend, falling back to a direct subprocess if no ComfyUI backend is available.
+
+**Tips for best results:**
+- Provide at least 2–3 overlapping images; more views improve geometry.
+- Keep consistent lighting and avoid motion blur.
+- Enable **Pad images to square** in Settings if your images are not square.
+
 ### Settings
 
 Open **Settings** in the Splat Viewer sidebar to configure:
@@ -117,7 +135,7 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 |---|---|
 | **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
 | **Reconstruction model** | `ml-sharp` (single image, fast), `VGGT` (multiple images, denser point cloud), or `InstantSplat` (multiple images, MASt3R point cloud). |
-| **Pad images to square** | *(VGGT only)* Resize each input image to fit within a 518 × 518 square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
+| **Pad images to square** | *(VGGT / InstantSplat)* Resize each input image to fit within a square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
 
 All settings are remembered between sessions.
