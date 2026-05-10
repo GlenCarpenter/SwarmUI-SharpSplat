@@ -9,6 +9,7 @@ obj/
 
 # Runtime sentinels
 .instantsplat_deps_installed
+instantsplat/
 
 # Python
 __pycache__/
