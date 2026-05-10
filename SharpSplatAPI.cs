@@ -40,6 +40,8 @@ public static class SharpSplatAPI
         API.RegisterAPICall(SharpGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(VGGTGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(VGGTGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(InstantSplatGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(InstantSplatGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpDeleteSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpSaveCanvasExport, true, SharpSplatPermissions.PermGenerateSplat);
@@ -651,6 +653,250 @@ public static class SharpSplatAPI
         catch (Exception ex)
         {
             Logs.Error($"SharpSplat VGGT error: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = ex.Message };
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates a Gaussian splat PLY via the <c>InstantSplatGenerate</c> ComfyUI custom node.
+    /// Submits a single-node workflow through the Comfy backend queue so InstantSplat shares
+    /// the backend's VRAM slot and does not run while other generations are in progress.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imagesBase64">Array of base64-encoded image data (PNG/JPG/WEBP).</param>
+    /// <param name="filenamePrefix">Optional filename prefix for the output file.</param>
+    /// <param name="outputFormat">Output format: "ply" or "splat".</param>
+    public static async Task<JObject> InstantSplatGenerateSplatViaComfy(Session session, string[] imagesBase64, string filenamePrefix = "output", string outputFormat = "ply", bool padToSquare = false)
+    {
+        if (imagesBase64 is null || imagesBase64.Length == 0)
+        {
+            return new JObject { ["success"] = false, ["error"] = "No images provided." };
+        }
+        foreach (string b64 in imagesBase64)
+        {
+            if (string.IsNullOrWhiteSpace(b64))
+            {
+                return new JObject { ["success"] = false, ["error"] = "One or more images in the array is empty." };
+            }
+            try { Convert.FromBase64String(b64); }
+            catch (FormatException)
+            {
+                return new JObject { ["success"] = false, ["error"] = "Invalid base64 data in images array." };
+            }
+        }
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
+        string imagesJson = new JArray(imagesBase64.Cast<object>().ToArray()).ToString(Newtonsoft.Json.Formatting.None);
+        JObject workflow = new()
+        {
+            ["1"] = new JObject
+            {
+                ["class_type"] = "InstantSplatGenerate",
+                ["inputs"] = new JObject
+                {
+                    ["images_base64_json"] = imagesJson,
+                    ["output_path"] = outputPath,
+                    ["output_format"] = outputFormat,
+                    ["pad_to_square"] = padToSquare
+                }
+            }
+        };
+        try
+        {
+            Logs.Info($"SharpSplat: Submitting InstantSplat generation via ComfyUI backend for '{safePrefix}' ({imagesBase64.Length} image(s))...");
+            using Session.GenClaim claim = session.Claim(liveGens: 1);
+            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { });
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: InstantSplat ComfyUI workflow error: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = $"ComfyUI workflow failed: {ex.Message}" };
+        }
+        if (!File.Exists(outputPath))
+        {
+            Logs.Error($"SharpSplat: InstantSplat ComfyUI workflow completed but output file not found at '{outputPath}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but output file was not produced. Check server logs." };
+        }
+        string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+        long outputBytes = new FileInfo(outputPath).Length;
+        Logs.Info($"SharpSplat: InstantSplat (Comfy) produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
+        return new JObject
+        {
+            ["success"] = true,
+            ["splatUrl"] = outputUrl,
+            ["filename"] = outputFilename
+        };
+    }
+
+    /// <summary>
+    /// Generates a Gaussian splat PLY file from one or more base64-encoded images using
+    /// InstantSplat via a direct Python subprocess. Used as a fallback when no ComfyUI
+    /// backend is available.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imagesBase64">Array of base64-encoded image data (PNG/JPG/WEBP).</param>
+    /// <param name="filenamePrefix">Optional filename prefix for the output file.</param>
+    /// <param name="outputFormat">Output format: "ply" or "splat".</param>
+    public static async Task<JObject> InstantSplatGenerateSplat(Session session, string[] imagesBase64, string filenamePrefix = "output", string outputFormat = "ply", bool padToSquare = false)
+    {
+        if (imagesBase64 is null || imagesBase64.Length == 0)
+        {
+            return new JObject { ["success"] = false, ["error"] = "No images provided." };
+        }
+
+        List<byte[]> imageBytesList = [];
+        for (int i = 0; i < imagesBase64.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(imagesBase64[i]))
+            {
+                return new JObject { ["success"] = false, ["error"] = $"Image at index {i} is empty." };
+            }
+            try
+            {
+                imageBytesList.Add(Convert.FromBase64String(imagesBase64[i]));
+            }
+            catch (FormatException)
+            {
+                return new JObject { ["success"] = false, ["error"] = $"Invalid base64 data at image index {i}." };
+            }
+        }
+
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
+
+        await EnsureDependenciesAsync();
+
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"sharpsplat_instantsplat_{Guid.NewGuid():N}");
+        string inputDir = Path.Combine(tempRoot, "images");
+        string outputDir = Path.Combine(tempRoot, "output");
+
+        try
+        {
+            Directory.CreateDirectory(inputDir);
+            Directory.CreateDirectory(outputDir);
+
+            for (int i = 0; i < imageBytesList.Count; i++)
+            {
+                string imgPath = Path.Combine(inputDir, $"image_{i:D4}.png");
+                await File.WriteAllBytesAsync(imgPath, imageBytesList[i]);
+            }
+
+            string wrapperScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_instantsplat.py");
+            ProcessStartInfo psi = BuildPythonPsi();
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(wrapperScript);
+            psi.ArgumentList.Add("--image_dir");
+            psi.ArgumentList.Add(inputDir);
+            psi.ArgumentList.Add("--output_dir");
+            psi.ArgumentList.Add(outputDir);
+            if (padToSquare)
+            {
+                psi.ArgumentList.Add("--pad_to_square");
+            }
+
+            Logs.Info($"SharpSplat: Running InstantSplat on {imageBytesList.Count} image(s)...");
+            using Process process = Process.Start(psi);
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync(CancellationToken.None);
+            string stdout = (await stdoutTask).Trim();
+            string stderr = (await stderrTask).Trim();
+
+            if (!string.IsNullOrWhiteSpace(stdout))
+            {
+                Logs.Debug($"SharpSplat InstantSplat stdout: {stdout}");
+            }
+            if (!string.IsNullOrWhiteSpace(stderr))
+            {
+                Logs.Warning($"SharpSplat InstantSplat stderr: {stderr}");
+            }
+
+            if (process.ExitCode != 0)
+            {
+                string errMsg = string.IsNullOrWhiteSpace(stderr)
+                    ? $"run_instantsplat exited with code {process.ExitCode}"
+                    : stderr.Split('\n').Last(l => !string.IsNullOrWhiteSpace(l));
+                Logs.Error($"SharpSplat: InstantSplat failed (exit {process.ExitCode}): {stderr}");
+                return new JObject { ["success"] = false, ["error"] = $"InstantSplat failed: {errMsg}" };
+            }
+
+            string[] plyFiles = Directory.GetFiles(outputDir, "*.ply", SearchOption.AllDirectories);
+            if (plyFiles.Length == 0)
+            {
+                Logs.Warning("SharpSplat: No .ply files found in InstantSplat output directory.");
+                return new JObject { ["success"] = false, ["error"] = "InstantSplat produced no PLY output. Check server logs for details." };
+            }
+
+            string plyPath = plyFiles[0];
+
+            if (outputFormat == "splat")
+            {
+                string convertScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py");
+                ProcessStartInfo convertPsi = BuildPythonPsi();
+                convertPsi.ArgumentList.Add("-s");
+                convertPsi.ArgumentList.Add(convertScript);
+                convertPsi.ArgumentList.Add(plyPath);
+                convertPsi.ArgumentList.Add(outputPath);
+                Logs.Info("SharpSplat: Converting InstantSplat PLY to .splat format...");
+                using Process convertProcess = Process.Start(convertPsi);
+                Task<string> convertOut = convertProcess.StandardOutput.ReadToEndAsync();
+                Task<string> convertErr = convertProcess.StandardError.ReadToEndAsync();
+                await convertProcess.WaitForExitAsync(CancellationToken.None);
+                if (!string.IsNullOrWhiteSpace((await convertOut).Trim()))
+                {
+                    Logs.Debug($"SharpSplat convert stdout: {(await convertOut).Trim()}");
+                }
+                if (convertProcess.ExitCode != 0)
+                {
+                    string convertErrStr = (await convertErr).Trim();
+                    Logs.Error($"SharpSplat: ply2splat conversion failed (exit {convertProcess.ExitCode}): {convertErrStr}");
+                    return new JObject { ["success"] = false, ["error"] = $"PLY to .splat conversion failed: {convertErrStr}" };
+                }
+                if (!File.Exists(outputPath))
+                {
+                    Logs.Error("SharpSplat: ply2splat reported success but output file does not exist.");
+                    return new JObject { ["success"] = false, ["error"] = "PLY to .splat conversion produced no output file." };
+                }
+            }
+            else
+            {
+                File.Copy(plyPath, outputPath, overwrite: false);
+                if (!File.Exists(outputPath))
+                {
+                    Logs.Error("SharpSplat: InstantSplat PLY copy failed — output file does not exist.");
+                    return new JObject { ["success"] = false, ["error"] = "Failed to save InstantSplat PLY output file." };
+                }
+            }
+
+            string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+            long outputBytes = new FileInfo(outputPath).Length;
+            Logs.Info($"SharpSplat: InstantSplat produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
+            return new JObject
+            {
+                ["success"] = true,
+                ["splatUrl"] = outputUrl,
+                ["filename"] = outputFilename
+            };
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat InstantSplat error: {ex.Message}");
             return new JObject { ["success"] = false, ["error"] = ex.Message };
         }
         finally

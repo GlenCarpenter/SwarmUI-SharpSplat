@@ -194,7 +194,7 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Returns the currently selected model ('mlsharp' or 'vggt').
+     * Returns the currently selected model ('mlsharp', 'vggt', or 'instantsplat').
      */
     _getModel() {
         let sel = document.getElementById('sharpsplat_setting_model');
@@ -214,6 +214,14 @@ class SharpSplatTabManager {
     }
 
     /**
+     * Returns true when the selected model uses multi-image input (VGGT or InstantSplat).
+     */
+    _isMultiViewModel() {
+        let model = this._getModel();
+        return model === 'vggt' || model === 'instantsplat';
+    }
+
+    /**
      * Applies single-image or multi-image dropzone mode based on current model selection.
      * Toggles the `multiple` attribute on the file input and updates hint text.
      */
@@ -224,8 +232,8 @@ class SharpSplatTabManager {
         if (!fileInput) {
             return;
         }
-        let isVggt = this._getModel() === 'vggt';
-        if (isVggt) {
+        let isMultiView = this._isMultiViewModel();
+        if (isMultiView) {
             fileInput.setAttribute('multiple', '');
             if (mainHint) { mainHint.textContent = 'Drop images here (multiple allowed)'; }
             if (subHint) { subHint.textContent = 'or click Browse to select one or more'; }
@@ -235,10 +243,10 @@ class SharpSplatTabManager {
             if (mainHint) { mainHint.textContent = 'Drop a single image here'; }
             if (subHint) { subHint.textContent = 'or click Browse to select'; }
         }
-        // Show/hide VGGT-only settings rows.
+        // Show/hide multi-view-only settings rows.
         let padRow = document.getElementById('sharpsplat_row_pad_to_square');
         if (padRow) {
-            padRow.style.display = isVggt ? '' : 'none';
+            padRow.style.display = isMultiView ? '' : 'none';
         }
     }
 
@@ -568,7 +576,7 @@ class SharpSplatTabManager {
             if (!fileInput.files || fileInput.files.length < 1) {
                 return;
             }
-            if (this._getModel() === 'vggt') {
+            if (this._isMultiViewModel()) {
                 await this._addVggtInputFiles(fileInput.files);
             }
             else {
@@ -582,7 +590,7 @@ class SharpSplatTabManager {
             if (!files || files.length < 1) {
                 return;
             }
-            if (this._getModel() === 'vggt') {
+            if (this._isMultiViewModel()) {
                 await this._addVggtInputFiles(files);
             }
             else {
@@ -605,6 +613,13 @@ class SharpSplatTabManager {
                 }
                 let prefix = sharpSplatGetFilenamePrefix(this._inputImages[0].name || 'output');
                 await sharpSplatGenerateVggt(this._inputImages, prefix);
+            }
+            else if (this._getModel() === 'instantsplat') {
+                if (this._inputImages.length < 1) {
+                    return;
+                }
+                let prefix = sharpSplatGetFilenamePrefix(this._inputImages[0].name || 'output');
+                await sharpSplatGenerateInstantSplat(this._inputImages, prefix);
             }
             else {
                 if (!this._inputImageBase64) {
@@ -693,7 +708,7 @@ class SharpSplatTabManager {
         let generateBtn = document.getElementById('sharpsplat_generate_btn');
         let previewWrap = document.getElementById('sharpsplat_input_preview_wrap');
         let previewImg = this._previewImgEl || document.getElementById('sharpsplat_input_preview');
-        let isVggt = this._getModel() === 'vggt';
+        let isVggt = this._isMultiViewModel();
 
         if (isVggt) {
             let count = this._inputImages.length;
@@ -1299,8 +1314,64 @@ async function handleSharpSplatGenerate(src) {
     if (model === 'vggt') {
         await sharpSplatGenerateVggt([{ base64: base64Data, name: filenamePrefix }], filenamePrefix);
     }
+    else if (model === 'instantsplat') {
+        await sharpSplatGenerateInstantSplat([{ base64: base64Data, name: filenamePrefix }], filenamePrefix);
+    }
     else {
         await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
+    }
+}
+
+/**
+ * Generates a point-cloud PLY splat from multiple images using InstantSplat and loads it in the viewer.
+ * Tries the ComfyUI backend route first (InstantSplatGenerateSplatViaComfy), which queues the
+ * InstantSplat job through Comfy so VRAM is shared with other generations.
+ * Falls back to the direct subprocess route (InstantSplatGenerateSplat) when no backend is available.
+ * @param {Array<{base64: string, name: string}>} images
+ * @param {string} filenamePrefix
+ */
+async function sharpSplatGenerateInstantSplat(images, filenamePrefix) {
+    let outputFormatSelect = document.getElementById('sharpsplat_setting_output_format');
+    let outputFormat = outputFormatSelect ? outputFormatSelect.value : 'ply';
+    let padCheck = document.getElementById('sharpsplat_setting_pad_to_square');
+    let padToSquare = padCheck ? padCheck.checked : false;
+    let imagesBase64 = images.map(img => img.base64);
+    let requestParams = { imagesBase64: imagesBase64, filenamePrefix: filenamePrefix || 'output', outputFormat: outputFormat, padToSquare: padToSquare };
+    function callInstantSplatAPI(endpoint) {
+        return new Promise((resolve, reject) => {
+            genericRequest(endpoint, requestParams, (data) => {
+                if (data.success) {
+                    resolve(data);
+                }
+                else {
+                    reject(new Error(data.error || 'InstantSplat generation failed.'));
+                }
+            });
+        });
+    }
+    try {
+        let result;
+        try {
+            let comfyPromise = callInstantSplatAPI('InstantSplatGenerateSplatViaComfy');
+            if (typeof updateGenCount === 'function') {
+                updateGenCount();
+            }
+            result = await comfyPromise;
+        }
+        catch (comfyErr) {
+            if (comfyErr.message && comfyErr.message.includes('No available ComfyUI Backend')) {
+                console.warn('SharpSplat InstantSplat: No ComfyUI backend available, falling back to direct generation.');
+                result = await callInstantSplatAPI('InstantSplatGenerateSplat');
+            }
+            else {
+                throw comfyErr;
+            }
+        }
+        await sharpSplatFinishGeneration(result);
+    }
+    catch (err) {
+        console.error('SharpSplat InstantSplat error:', err);
+        showError('SharpSplat: ' + err.message);
     }
 }
 

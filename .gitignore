@@ -7,6 +7,9 @@ obj/
 *.user
 *.suo
 
+# Runtime sentinels
+.instantsplat_deps_installed
+
 # Python
 __pycache__/
 *.pyc
