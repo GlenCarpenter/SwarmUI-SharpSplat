@@ -308,6 +308,14 @@ def main():
     image_files = image_files[:n_views]
     print(f"InstantSplat: Using {n_views} view(s).")
 
+    if n_views < 2:
+        print(
+            "ERROR: InstantSplat requires at least 2 input images to compute view pairs. "
+            "Please provide multiple images.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"InstantSplat: Running on {device}.")
 

@@ -1309,17 +1309,7 @@ async function handleSharpSplatGenerate(src) {
         }
     }
     catch (_) {}
-    let modelSel = document.getElementById('sharpsplat_setting_model');
-    let model = modelSel ? (modelSel.value || 'mlsharp') : 'mlsharp';
-    if (model === 'vggt') {
-        await sharpSplatGenerateVggt([{ base64: base64Data, name: filenamePrefix }], filenamePrefix);
-    }
-    else if (model === 'instantsplat') {
-        await sharpSplatGenerateInstantSplat([{ base64: base64Data, name: filenamePrefix }], filenamePrefix);
-    }
-    else {
-        await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
-    }
+    await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
 }
 
 /**

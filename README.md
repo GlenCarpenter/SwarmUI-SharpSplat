@@ -87,6 +87,8 @@ git clone https://github.com/GlenCarpenter/SwarmUI-SharpSplat
 3. Wait for inference (30–120 seconds depending on GPU).
 4. The **Splat Viewer** tab opens automatically with the result loaded.
 
+> **Note:** The **Generate 3D Splat** button in the image viewer always uses ml-sharp, regardless of the reconstruction model selected in the Splat Viewer settings. VGGT performs poorly with single images, and InstantSplat require multiple images. Both models must be used from the Splat Viewer tab directly.
+
 You can also drop or browse to an image in the **Splat Viewer** sidebar directly.
 
 ### Generating a splat from multiple images (VGGT)
