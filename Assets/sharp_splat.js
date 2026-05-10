@@ -127,6 +127,16 @@ class SharpSplatTabManager {
                 localStorage.setItem('sharpsplat_auto_navigate', autoNavToggle.checked ? 'true' : 'false');
             });
         }
+        // Restore and persist the repair prompt feature flag, and sync button visibility.
+        let repairPromptToggle = document.getElementById('sharpsplat_setting_repair_prompt');
+        if (repairPromptToggle) {
+            repairPromptToggle.checked = localStorage.getItem('sharpsplat_repair_prompt') === 'true';
+            repairPromptToggle.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_repair_prompt', repairPromptToggle.checked ? 'true' : 'false');
+                this._syncRepairPromptButtonVisibility();
+            });
+        }
+        this._syncRepairPromptButtonVisibility();
         // Restore and persist the output format select, and keep the hidden T2I param in sync.
         let formatSelect = document.getElementById('sharpsplat_setting_output_format');
         if (formatSelect) {
@@ -251,6 +261,99 @@ class SharpSplatTabManager {
     }
 
     /**
+     * Shows or hides the Generate Repair Prompt button based on the feature flag setting.
+     */
+    _syncRepairPromptButtonVisibility() {
+        let btn = document.getElementById('sharpsplat_repair_prompt_btn');
+        if (!btn) {
+            return;
+        }
+        let toggle = document.getElementById('sharpsplat_setting_repair_prompt');
+        btn.style.display = (toggle && toggle.checked) ? '' : 'none';
+    }
+
+    /**
+     * Briefly shows a non-blocking toast notification inside the viewer panel.
+     * @param {string} message - Text to display.
+     */
+    _showToast(message) {
+        let container = document.getElementById('sharpsplat_toast_container');
+        if (!container) {
+            return;
+        }
+        let toast = document.createElement('div');
+        toast.className = 'sharpsplat-toast';
+        toast.textContent = message;
+        container.appendChild(toast);
+        // Trigger fade-in on next frame.
+        requestAnimationFrame(() => {
+            toast.classList.add('visible');
+        });
+        setTimeout(() => {
+            toast.classList.remove('visible');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 220);
+        }, 2500);
+    }
+
+    /**
+     * Builds the repair prompt string with the current camera-movement delta encoded as JSON,
+     * copies it to the clipboard, and shows a toast confirmation.
+     *
+     * The delta is computed between the initial auto-framed camera state (position of camera
+     * at scene load) and the current camera position. Values are rounded to 3 decimal places.
+     * When no splat is loaded, or the initial state has not been captured yet, all deltas are 0.
+     *
+     * The prompt is designed for use with the flux2-klein9b-lora-mlsharp-3d-repair LoRA:
+     * https://huggingface.co/cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair
+     */
+    _generateRepairPrompt() {
+        let dx = 0, dy = 0, dz = 0, dpitch = 0, dyaw = 0, droll = 0;
+        if (this._viewer && this._viewer.camera && this._initialCameraState) {
+            let pos = this._viewer.camera.position;
+            let init = this._initialCameraState.position;
+            dx = Math.round((pos.x - init.x) * 1000) / 1000;
+            dy = Math.round((pos.y - init.y) * 1000) / 1000;
+            dz = Math.round((pos.z - init.z) * 1000) / 1000;
+            // camera.rotation (Euler XYZ) is kept live by Three.js — read deltas directly.
+            let rot = this._viewer.camera.rotation;
+            let toDeg = v => Math.round(v * (180 / Math.PI) * 1000) / 1000;
+            dpitch = toDeg(rot.x - this._initialCameraState.rotationX);
+            dyaw   = toDeg(rot.y - this._initialCameraState.rotationY);
+            droll  = toDeg(rot.z - this._initialCameraState.rotationZ);
+        }
+        let cameraJson = JSON.stringify({ x: dx, y: dy, z: dz, pitch: dpitch, yaw: dyaw, roll: droll });
+        let prompt = 'Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ' + cameraJson;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(prompt).catch(() => {
+                this._clipboardFallback(prompt);
+            });
+        }
+        else {
+            this._clipboardFallback(prompt);
+        }
+        this._showToast('Repair prompt copied to clipboard');
+    }
+
+    /**
+     * Fallback clipboard write using a temporary textarea and execCommand.
+     * @param {string} text
+     */
+    _clipboardFallback(text) {
+        let ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+    }
+
+    /**
      * Wires up export canvas UI — resolution dropdown, custom dims, and overlay buttons.
      */
     _setupExportCanvas() {
@@ -293,6 +396,12 @@ class SharpSplatTabManager {
             }
             this._showExportOverlay();
         });
+        let repairPromptBtn = document.getElementById('sharpsplat_repair_prompt_btn');
+        if (repairPromptBtn) {
+            repairPromptBtn.addEventListener('click', () => {
+                this._generateRepairPrompt();
+            });
+        }
         cancelBtn.addEventListener('click', () => {
             this._hideExportOverlay();
         });
@@ -795,6 +904,7 @@ class SharpSplatTabManager {
      * is created (via the generation counter) or when the viewer is disposed.
      */
     _startCameraSync() {
+        console.log(this._viewer.camera);
         let gen = ++this._cameraSyncGen;
         let lastX = null, lastY = null, lastZ = null;
         let lastLX = null, lastLY = null, lastLZ = null;
@@ -1100,9 +1210,12 @@ class SharpSplatTabManager {
                         isFinite(t.x) && isFinite(t.y) && isFinite(t.z) &&
                         (p.x !== 0 || p.y !== 0 || p.z !== 0))
                     {
+                        let _rot = this._viewer.camera.rotation;
                         this._initialCameraState = {
                             position: p.clone(),
-                            quaternion: this._viewer.camera.quaternion.clone(),
+                            rotationX: _rot.x,
+                            rotationY: _rot.y,
+                            rotationZ: _rot.z,
                             up: this._viewer.camera.up.clone(),
                             target: t.clone(),
                         };

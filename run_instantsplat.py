@@ -376,14 +376,14 @@ def main():
     # Extract point cloud and colours
     # ------------------------------------------------------------------
     pts3d = to_numpy(scene.get_pts3d())      # list of (H, W, 3)
-    imgs = np.array(scene.imgs)               # (N, H, W, 3) in [0, 1]
-    confs = np.array([
+    imgs = scene.imgs                         # list of (H, W, 3) in [0, 1] — may have different H/W
+    confs = [
         param.detach().cpu().numpy() for param in scene.im_conf
-    ])                                        # (N, H, W)
+    ]                                         # list of (H, W)
 
     pts_flat = np.concatenate([p.reshape(-1, 3) for p in pts3d], axis=0).astype(np.float32)
     col_flat = (np.concatenate([img.reshape(-1, 3) for img in imgs], axis=0) * 255).clip(0, 255).astype(np.uint8)
-    conf_flat = confs.reshape(-1)
+    conf_flat = np.concatenate([c.reshape(-1) for c in confs])
 
     # ------------------------------------------------------------------
     # Filter by confidence (remove lowest percentile)

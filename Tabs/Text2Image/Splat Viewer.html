@@ -35,6 +35,13 @@
                         <option value="splat">SPLAT</option>
                     </select>
                 </div>
+                <div class="sharpsplat-settings-row">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_repair_prompt">Generate Repair Prompt button</label>
+                    <label class="sharpsplat-toggle">
+                        <input type="checkbox" id="sharpsplat_setting_repair_prompt">
+                        <span class="sharpsplat-toggle-slider"></span>
+                    </label>
+                </div>
             </div>
         </div>
         <!-- Input accordion -->
@@ -120,6 +127,7 @@
             <div class="sharpsplat-accordion-body">
                 <div class="sharpsplat-export-wrap">
                     <button class="basic-button" id="sharpsplat_export_btn">Export Canvas</button>
+                    <button class="basic-button sharpsplat-repair-prompt-btn" id="sharpsplat_repair_prompt_btn" style="display:none">Generate Repair Prompt</button>
                     <!-- Shown only during export mode -->
                     <div id="sharpsplat_export_actions" style="display:none">
                         <div class="sharpsplat-settings-row">
@@ -182,5 +190,7 @@
                 <div class="sharpsplat-export-viewport-box" id="sharpsplat_export_viewport_box"></div>
             </div>
         </div>
+        <!-- Toast notification container -->
+        <div class="sharpsplat-toast-container" id="sharpsplat_toast_container" aria-live="polite"></div>
     </div>
 </div>

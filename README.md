@@ -137,6 +137,7 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 | **Reconstruction model** | `ml-sharp` (single image, fast), `VGGT` (multiple images, denser point cloud), or `InstantSplat` (multiple images, MASt3R point cloud). |
 | **Pad images to square** | *(VGGT / InstantSplat)* Resize each input image to fit within a square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
+| **Generate Repair Prompt button** | Shows the **Generate Repair Prompt** button in the Export Canvas section. Intended for use with the ml-sharp repair LoRA — see below. Off by default. |
 
 All settings are remembered between sessions.
 
@@ -175,6 +176,28 @@ The **Export Canvas** section in the Splat Viewer sidebar lets you capture the c
 4. A blue overlay on the canvas shows the region that will be captured.
 5. Click **Save to Outputs** to save the PNG to `Output/local/splats_export/` with a filename of `splatname_timestamp.png`, or **Download** to download it directly to your browser's download folder.
 6. Click **Cancel** to dismiss without exporting.
+
+### Generating a repair prompt (ml-sharp)
+
+The **Generate Repair Prompt** button produces a prompt pre-filled with the current camera movement delta, designed for use with the [flux2-klein9b-lora-mlsharp-3d-repair](https://huggingface.co/cyrildiagne/flux2-klein9b-lora-mlsharp-3d-repair) LoRA. The workflow is:
+
+1. Generate a splat from a single image using **ml-sharp**.
+2. Export the initial view as a PNG — this becomes **image 1** (the reference).
+3. Orbit to the angle you want repaired, then export again — this becomes **image 2**.
+4. Click **Generate Repair Prompt**. The prompt is copied to your clipboard with the camera movement encoded as JSON.
+5. Use the copied prompt together with the two exported images and the repair LoRA to inpaint/repair the missing or distorted areas of the novel view.
+
+The prompt takes the form:
+
+```
+Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: {"x":0,"y":0,"z":0,"pitch":0,"yaw":0,"roll":0}
+```
+
+Position values (`x`, `y`, `z`) are world-space translation deltas relative to the initial camera position at scene load. Rotation values (`pitch`, `yaw`, `roll`) are in degrees.
+
+> **Note:** This feature is designed exclusively for **ml-sharp** splats. VGGT and InstantSplat produce multi-view reconstructions with different geometry characteristics that the repair LoRA was not trained for.
+
+This button is hidden by default. Enable it in **Settings → Generate Repair Prompt button**.
 
 ### Viewer controls
 
