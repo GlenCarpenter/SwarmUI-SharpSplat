@@ -2,7 +2,7 @@
 
 A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns images into 3D Gaussian Splats directly inside the browser.
 
-Two reconstruction models are supported:
+Three reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
 - **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Works with a **single image or multiple images** of the same scene from different angles; more views produce a denser, more accurate point cloud.
