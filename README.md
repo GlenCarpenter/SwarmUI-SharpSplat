@@ -6,13 +6,14 @@ A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns im
 https://github.com/user-attachments/assets/c71d7912-4fa1-4b15-a6fe-c7ea75f13da8
 
 
-Three reconstruction models are supported:
+Four reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
+- **TripoSplat** — VAST-AI's [TripoSplat](https://huggingface.co/VAST-AI/TripoSplat). Takes a **single image** and produces a full 3D Gaussian Splat using a latent diffusion pipeline with spherical harmonics; often higher fidelity than ml-sharp, especially for object-centric subjects.
 - **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Works with a **single image or multiple images** of the same scene from different angles; more views produce a denser, more accurate point cloud.
 - **InstantSplat** — NVIDIA's [InstantSplat](https://github.com/NVlabs/InstantSplat). Takes **multiple images** and uses MASt3R geometry initialisation to produce a coloured point cloud.
 
-> **Note:** Both VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
+> **Note:** VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
 
 Results are saved as `.ply` (default) or `.splat` and rendered interactively in a dedicated **Splat Viewer** tab powered by [GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D/).
 
@@ -21,31 +22,32 @@ Results are saved as `.ply` (default) or `.splat` and rendered interactively in 
 ## How It Works
 
 ```
-Single image (ml-sharp)      1+ images (VGGT)     2+ images (InstantSplat)
-        │                          │                        │
-        ▼                          ▼                        ▼
-[Generate 3D Splat button]    [Splat Viewer → drop images & select model]
-        │                          │                        │
-        └──────────────┬───────────┴────────────────────────┘
-                       ▼  (base64 → server)
-              SharpSplat API (C#)
-                       │
-           ┌───────────┼───────────┐
-           ▼           ▼           ▼
-        ml-sharp      VGGT     InstantSplat
-     (single img)  (1+ imgs)   (2+ imgs, MASt3R)
-           │           │           │
-           └───────────┴───────────┘
-                       ▼
-                  .ply output
-                       │
-                 [if format = splat]
-                       ▼
-                  ply2splat → .splat
-                  saved to Output/{user}/splats/
-                       │
-                       ▼
-            Splat Viewer tab (WebGL)
+Single image           Single image        1+ images (VGGT)     2+ images (InstantSplat)
+(ml-sharp)             (TripoSplat)               │                        │
+     │                      │                     ▼                        ▼
+     ▼                      ▼          [Splat Viewer → drop images & select model]
+[Generate 3D Splat button]  │                     │                        │
+     │                      │                     │                        │
+     └──────────┬───────────┴─────────────────────┴────────────────────────┘
+                ▼  (base64 → server)
+       SharpSplat API (C#)
+                │
+    ┌───────────┼─────────────┬───────────┐
+    ▼           ▼             ▼           ▼
+ ml-sharp   TripoSplat      VGGT     InstantSplat
+(single img)(single img)  (1+ imgs)  (2+ imgs, MASt3R)
+    │           │             │           │
+    └───────────┴─────────────┴───────────┘
+                ▼
+           .ply output
+                │
+          [if format = splat]
+                ▼
+           ply2splat → .splat
+           saved to Output/{user}/splats/
+                │
+                ▼
+     Splat Viewer tab (WebGL)
 ```
 
 ---
@@ -61,8 +63,9 @@ Python dependencies are installed automatically on first use:
 | Package | Purpose |
 |---|---|
 | [ml-sharp](https://github.com/apple/ml-sharp) | Monocular 3DGS reconstruction (single image) |
+| [TripoSplat](https://huggingface.co/VAST-AI/TripoSplat) | Single-image 3DGS reconstruction with SH (model weights ~3 GB, downloaded from HuggingFace on first use) |
 | [VGGT](https://github.com/facebookresearch/vggt) | Multi-view 3D reconstruction |
-| [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Downloads VGGT model weights (~1 GB, first run only) |
+| [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Downloads VGGT / TripoSplat model weights (first run only) |
 | [InstantSplat](https://github.com/NVlabs/InstantSplat) | MASt3R-based multi-view reconstruction (cloned from GitHub on first use, ~1.2 GB checkpoint downloaded automatically) |
 | [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` conversion (only needed when output format is `.splat`) |
 
@@ -85,16 +88,40 @@ git clone https://github.com/GlenCarpenter/SwarmUI-SharpSplat
 
 ## Usage
 
-### Generating a splat from a single image (ml-sharp)
+### Generating a splat from a single image (ml-sharp / TripoSplat)
 
 1. Generate any image in the **Generate** tab.
 2. Click **Generate 3D Splat** in the image button bar.
 3. Wait for inference (30–120 seconds depending on GPU).
 4. The **Splat Viewer** tab opens automatically with the result loaded.
 
-> **Note:** The **Generate 3D Splat** button in the image viewer always uses ml-sharp, regardless of the reconstruction model selected in the Splat Viewer settings. VGGT performs poorly with single images, and InstantSplat require multiple images. Both models must be used from the Splat Viewer tab directly.
+> **Note:** The **Generate 3D Splat** button in the image viewer uses whichever single-image model is selected in **Splat Viewer → Settings → Reconstruction model** (`ml-sharp` or `TripoSplat`). VGGT and InstantSplat require multiple images and must be used from the Splat Viewer tab directly.
 
 You can also drop or browse to an image in the **Splat Viewer** sidebar directly.
+
+**Choosing between ml-sharp and TripoSplat:**
+- **ml-sharp** is faster and works well for a wide range of subjects.
+- **TripoSplat** uses a latent diffusion pipeline that tends to produce higher-quality geometry and colour on object-centric subjects, at the cost of longer inference time (~2–5 minutes on first run while models download).
+
+### Generating a splat from a single image (TripoSplat — Splat Viewer)
+
+TripoSplat can also be used from the Splat Viewer tab, which is useful for generating from an image that wasn't produced by SwarmUI.
+
+1. Open the **Splat Viewer** tab.
+2. In **Settings**, change **Reconstruction model** to **TripoSplat**.
+3. Drop a single image onto the dropzone, or click **Browse** to select one.
+4. Click **Generate Splat**.
+5. On first use, model weights (~3 GB total) are downloaded from HuggingFace automatically before inference begins.
+
+Model files downloaded on first use:
+
+| File | Description |
+|---|---|
+| `diffusion_models/triposplat_fp16.safetensors` | Main denoising UNet |
+| `clip_vision/dino_v3_vit_h.safetensors` | DINOv3 ViT-H image encoder |
+| `vae/triposplat_vae_decoder_fp16.safetensors` | Splat VAE decoder |
+| `vae/flux2-vae.safetensors` | Flux VAE (image encoding) |
+| `background_removal/birefnet.safetensors` | Optional background removal |
 
 ### Generating a splat from multiple images (VGGT)
 
@@ -138,7 +165,7 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 | Setting | Description |
 |---|---|
 | **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
-| **Reconstruction model** | `ml-sharp` (single image, fast), `VGGT` (multiple images, denser point cloud), or `InstantSplat` (multiple images, MASt3R point cloud). |
+| **Reconstruction model** | `ml-sharp` (single image, fast), `TripoSplat` (single image, diffusion-based, higher fidelity), `VGGT` (1+ images, denser point cloud), or `InstantSplat` (2+ images, MASt3R point cloud). |
 | **Pad images to square** | *(VGGT / InstantSplat)* Resize each input image to fit within a square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
 | **Generate Repair Prompt button** | Shows the **Generate Repair Prompt** button in the Export Canvas section. Intended for use with the ml-sharp repair LoRA — see below. Off by default. |
@@ -156,7 +183,7 @@ a photo of a red apple on a wooden table <sharpsplat>
 - The tag is stripped before it reaches the model — it has no effect on image content.
 - Splat generation runs as a node inside the same ComfyUI job as the image.
 - Batch generations produce one splat per image.
-- This tag always uses **ml-sharp** (single-image mode).
+- The tag uses whichever single-image model is currently selected in **Settings → Reconstruction model** (`ml-sharp` or `TripoSplat`). VGGT and InstantSplat are not available via the prompt tag.
 
 The tag is available in the prompt autocomplete — type `<sharpsplat` to see it suggested.
 
@@ -199,7 +226,7 @@ Referring to the scene in image 1, restore the perspective of the scene in image
 
 Position values (`x`, `y`, `z`) are world-space translation deltas relative to the initial camera position at scene load. Rotation values (`pitch`, `yaw`, `roll`) are in degrees.
 
-> **Note:** This feature is designed exclusively for **ml-sharp** splats. VGGT and InstantSplat produce multi-view reconstructions with different geometry characteristics that the repair LoRA was not trained for.
+> **Note:** This feature is designed for **ml-sharp** splats. The repair LoRA was trained on ml-sharp output — results with TripoSplat splats may vary. VGGT and InstantSplat produce multi-view reconstructions with different geometry characteristics that the repair LoRA was not trained for.
 
 This button is hidden by default. Enable it in **Settings → Generate Repair Prompt button**.
 

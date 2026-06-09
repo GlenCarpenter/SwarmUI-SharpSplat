@@ -730,6 +730,13 @@ class SharpSplatTabManager {
                 let prefix = sharpSplatGetFilenamePrefix(this._inputImages[0].name || 'output');
                 await sharpSplatGenerateInstantSplat(this._inputImages, prefix);
             }
+            else if (this._getModel() === 'triposplat') {
+                if (!this._inputImageBase64) {
+                    return;
+                }
+                let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
+                await sharpSplatGenerateTripoSplat(this._inputImageBase64, filenamePrefix);
+            }
             else {
                 if (!this._inputImageBase64) {
                     return;
@@ -1422,7 +1429,62 @@ async function handleSharpSplatGenerate(src) {
         }
     }
     catch (_) {}
-    await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
+    let model = sharpSplatTab._getModel();
+    if (model === 'triposplat') {
+        await sharpSplatGenerateTripoSplat(base64Data, filenamePrefix);
+    }
+    else {
+        await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
+    }
+}
+
+/**
+ * Generates a Gaussian splat from a single image using TripoSplat and loads it in the viewer.
+ * Tries the ComfyUI backend route first (TripoSplatGenerateSplatViaComfy), falling back to
+ * the direct subprocess route (TripoSplatGenerateSplat) when no backend is available.
+ * @param {string} base64Data
+ * @param {string} filenamePrefix
+ */
+async function sharpSplatGenerateTripoSplat(base64Data, filenamePrefix) {
+    let outputFormatSelect = document.getElementById('sharpsplat_setting_output_format');
+    let outputFormat = outputFormatSelect ? outputFormatSelect.value : 'ply';
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix || 'output', outputFormat: outputFormat };
+    function callTripoAPI(endpoint) {
+        return new Promise((resolve, reject) => {
+            genericRequest(endpoint, requestParams, (data) => {
+                if (data.success) {
+                    resolve(data);
+                }
+                else {
+                    reject(new Error(data.error || 'TripoSplat generation failed.'));
+                }
+            });
+        });
+    }
+    try {
+        let result;
+        try {
+            let comfyPromise = callTripoAPI('TripoSplatGenerateSplatViaComfy');
+            if (typeof updateGenCount === 'function') {
+                updateGenCount();
+            }
+            result = await comfyPromise;
+        }
+        catch (comfyErr) {
+            if (comfyErr.message && comfyErr.message.includes('No available ComfyUI Backend')) {
+                console.warn('SharpSplat TripoSplat: No ComfyUI backend available, falling back to direct generation.');
+                result = await callTripoAPI('TripoSplatGenerateSplat');
+            }
+            else {
+                throw comfyErr;
+            }
+        }
+        await sharpSplatFinishGeneration(result);
+    }
+    catch (err) {
+        console.error('SharpSplat TripoSplat error:', err);
+        showError('SharpSplat: ' + err.message);
+    }
 }
 
 /**

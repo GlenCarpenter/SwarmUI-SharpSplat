@@ -42,6 +42,8 @@ public static class SharpSplatAPI
         API.RegisterAPICall(VGGTGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(InstantSplatGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(InstantSplatGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(TripoSplatGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(TripoSplatGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpDeleteSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpSaveCanvasExport, true, SharpSplatPermissions.PermGenerateSplat);
@@ -897,6 +899,178 @@ public static class SharpSplatAPI
         catch (Exception ex)
         {
             Logs.Error($"SharpSplat InstantSplat error: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = ex.Message };
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Generates a 3D Gaussian Splat PLY file from the provided base64-encoded image by
+    /// submitting a ComfyUI workflow containing the <c>TripoSplatGenerate</c> custom node.
+    /// This routes generation through the Comfy backend queue rather than running a
+    /// standalone Python subprocess directly.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imageBase64">Base64-encoded image data (PNG/JPG/WEBP).</param>
+    /// <param name="filenamePrefix">Optional filename prefix for the output file.</param>
+    /// <param name="outputFormat">Output format: "ply" or "splat".</param>
+    public static async Task<JObject> TripoSplatGenerateSplatViaComfy(Session session, string imageBase64, string filenamePrefix = "output", string outputFormat = "ply")
+    {
+        if (string.IsNullOrWhiteSpace(imageBase64))
+        {
+            return new JObject { ["success"] = false, ["error"] = "No image data provided." };
+        }
+        try
+        {
+            Convert.FromBase64String(imageBase64);
+        }
+        catch (FormatException)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
+        }
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
+        JObject workflow = new()
+        {
+            ["1"] = new JObject
+            {
+                ["class_type"] = "SwarmLoadImageB64",
+                ["inputs"] = new JObject { ["image_base64"] = imageBase64 }
+            },
+            ["2"] = new JObject
+            {
+                ["class_type"] = "TripoSplatGenerate",
+                ["inputs"] = new JObject
+                {
+                    ["images"] = new JArray { "1", 0 },
+                    ["output_path"] = outputPath,
+                    ["output_format"] = outputFormat,
+                    ["num_gaussians"] = 262144,
+                    ["seed"] = 0,
+                    ["remove_background"] = true
+                }
+            }
+        };
+        try
+        {
+            Logs.Info($"SharpSplat: Submitting TripoSplat generation via ComfyUI for '{safePrefix}'...");
+            using Session.GenClaim claim = session.Claim(liveGens: 1);
+            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { });
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: TripoSplat ComfyUI workflow error: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = $"ComfyUI workflow failed: {ex.Message}" };
+        }
+        if (!File.Exists(outputPath))
+        {
+            Logs.Error($"SharpSplat: TripoSplat ComfyUI workflow completed but output file not found at '{outputPath}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but output file was not produced. Check server logs." };
+        }
+        string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+        long outputBytes = new FileInfo(outputPath).Length;
+        Logs.Info($"SharpSplat: TripoSplat (Comfy) produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
+        return new JObject
+        {
+            ["success"] = true,
+            ["splatUrl"] = outputUrl,
+            ["filename"] = outputFilename
+        };
+    }
+
+    /// <summary>
+    /// Generates a 3D Gaussian Splat PLY file from the provided base64-encoded image using
+    /// TripoSplat via a direct Python subprocess. Used as a fallback when no ComfyUI
+    /// backend is available.
+    /// </summary>
+    /// <param name="session">The calling user session.</param>
+    /// <param name="imageBase64">Base64-encoded image data (PNG/JPG/WEBP).</param>
+    /// <param name="filenamePrefix">Optional filename prefix for the output file.</param>
+    /// <param name="outputFormat">Output format: "ply" or "splat".</param>
+    public static async Task<JObject> TripoSplatGenerateSplat(Session session, string imageBase64, string filenamePrefix = "output", string outputFormat = "ply")
+    {
+        if (string.IsNullOrWhiteSpace(imageBase64))
+        {
+            return new JObject { ["success"] = false, ["error"] = "No image data provided." };
+        }
+        byte[] imageBytes;
+        try
+        {
+            imageBytes = Convert.FromBase64String(imageBase64);
+        }
+        catch (FormatException)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
+        }
+        (string outputFormatSanitized, string safePrefix, string outputFilename, string outputPath) =
+            PrepareUniqueOutputPath(session, filenamePrefix, outputFormat);
+        outputFormat = outputFormatSanitized;
+        await EnsureDependenciesAsync();
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"sharpsplat_triposplat_{Guid.NewGuid():N}");
+        string tempImagePath = Path.Combine(tempRoot, "image.png");
+        string wrapperScript = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_triposplat.py");
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            await File.WriteAllBytesAsync(tempImagePath, imageBytes);
+            ProcessStartInfo psi = BuildPythonPsi();
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add(wrapperScript);
+            psi.ArgumentList.Add("--image");
+            psi.ArgumentList.Add(tempImagePath);
+            psi.ArgumentList.Add("--output");
+            psi.ArgumentList.Add(outputPath);
+            psi.ArgumentList.Add("--output_format");
+            psi.ArgumentList.Add(outputFormat);
+            Logs.Info($"SharpSplat: Running TripoSplat on image ({imageBytes.Length} bytes)...");
+            using Process process = Process.Start(psi);
+            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            await process.WaitForExitAsync(CancellationToken.None);
+            string stdout = (await stdoutTask).Trim();
+            string stderr = (await stderrTask).Trim();
+            if (!string.IsNullOrWhiteSpace(stdout)) { Logs.Debug($"SharpSplat TripoSplat stdout: {stdout}"); }
+            if (!string.IsNullOrWhiteSpace(stderr)) { Logs.Warning($"SharpSplat TripoSplat stderr: {stderr}"); }
+            if (process.ExitCode != 0)
+            {
+                string errMsg = string.IsNullOrWhiteSpace(stderr)
+                    ? $"run_triposplat exited with code {process.ExitCode}"
+                    : stderr.Split('\n').Last(l => !string.IsNullOrWhiteSpace(l));
+                Logs.Error($"SharpSplat: TripoSplat failed (exit {process.ExitCode}): {stderr}");
+                return new JObject { ["success"] = false, ["error"] = $"TripoSplat failed: {errMsg}" };
+            }
+            if (!File.Exists(outputPath))
+            {
+                Logs.Error("SharpSplat: TripoSplat completed but output file not found.");
+                return new JObject { ["success"] = false, ["error"] = "TripoSplat produced no output. Check server logs." };
+            }
+            string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+            long outputFileBytes = new FileInfo(outputPath).Length;
+            Logs.Info($"SharpSplat: TripoSplat produced '{outputFilename}' ({outputFileBytes} bytes) at {outputUrl}.");
+            return new JObject
+            {
+                ["success"] = true,
+                ["splatUrl"] = outputUrl,
+                ["filename"] = outputFilename
+            };
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat TripoSplat error: {ex.Message}");
             return new JObject { ["success"] = false, ["error"] = ex.Message };
         }
         finally

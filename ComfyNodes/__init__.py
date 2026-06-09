@@ -22,3 +22,10 @@ try:
 except Exception:
     print("Error: [SharpSplat] InstantSplatNode not available")
     traceback.print_exc()
+
+try:
+    from . import TripoSplatNode
+    NODE_CLASS_MAPPINGS.update(TripoSplatNode.NODE_CLASS_MAPPINGS)
+except Exception:
+    print("Error: [SharpSplat] TripoSplatNode not available")
+    traceback.print_exc()
