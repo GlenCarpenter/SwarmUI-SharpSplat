@@ -264,20 +264,18 @@ def main():
     (splat_vae,) = _call("VAELoader", _SVAE)
     (flux2_vae,) = _call("VAELoader", _FVAE)
 
-    if (
-        not args.no_bg_removal
-        and "LoadBackgroundRemovalModel" in NM
-        and "RemoveBackground" in NM
-    ):
-        bg_files = folder_paths.get_filename_list("background_removal")
-        if _BGM in bg_files:
+    if not args.no_bg_removal:
+        bg_path = folder_paths.get_full_path("background_removal", _BGM)
+        if bg_path:
             try:
+                from comfy.bg_removal_model import load as _load_bg_model
                 print(f"{_TAG} Removing background...")
-                (bg_model,) = _call("LoadBackgroundRemovalModel", _BGM)
-                bg_result = _call("RemoveBackground", image, bg_model)
-                if isinstance(bg_result, (list, tuple)) and len(bg_result) >= 2:
-                    image = bg_result[0]
-                    mask = bg_result[1]
+                bg_obj = _load_bg_model(bg_path)
+                if bg_obj is None:
+                    raise RuntimeError("BiRefNet model file is invalid or unrecognised.")
+                # encode_image returns (B, H, W) foreground alpha matte in [0, 1]
+                mask = bg_obj.encode_image(image)
+                print(f"{_TAG} Background removal complete.")
             except Exception as exc:
                 print(
                     f"{_TAG} Background removal failed (continuing): {exc}",

@@ -273,21 +273,18 @@ class TripoSplatGenerate:
         h, w  = image.shape[1], image.shape[2]
         mask  = torch.ones((1, h, w), device=image.device, dtype=torch.float32)
 
-        if (
-            remove_background
-            and "LoadBackgroundRemovalModel" in NM
-            and "RemoveBackground" in NM
-        ):
-            bg_files = folder_paths.get_filename_list("background_removal")
-            if _BG_MODEL in bg_files:
+        if remove_background:
+            bg_path = folder_paths.get_full_path("background_removal", _BG_MODEL)
+            if bg_path:
                 try:
+                    from comfy.bg_removal_model import load as _load_bg_model
                     print(f"{_TAG} Removing background via BiRefNet...")
-                    (bg_model,) = _call_node(NM, "LoadBackgroundRemovalModel", _BG_MODEL)
-                    bg_result   = _call_node(NM, "RemoveBackground", image, bg_model)
-                    # RemoveBackground returns (RGBA image, mask) or (image, mask)
-                    if isinstance(bg_result, (list, tuple)) and len(bg_result) >= 2:
-                        image = bg_result[0]
-                        mask  = bg_result[1]
+                    bg_obj = _load_bg_model(bg_path)
+                    if bg_obj is None:
+                        raise RuntimeError("BiRefNet model file is invalid or unrecognised.")
+                    # encode_image returns (B, H, W) foreground alpha matte in [0, 1]
+                    mask = bg_obj.encode_image(image)
+                    print(f"{_TAG} Background removal complete.")
                 except Exception as exc:
                     print(f"{_TAG} Background removal failed (continuing without): {exc}")
             else:
