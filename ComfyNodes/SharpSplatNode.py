@@ -9,8 +9,8 @@ The C# side (SharpSplatAPI.SharpGenerateSplatViaComfy) is responsible for:
   - verifying the file exists after the workflow completes
   - returning the URL to the browser
 
-Dependencies (ml-sharp, ply2splat) are installed on first use via the extension's
-requirements.txt using the same Python executable that is running ComfyUI.
+Dependencies (ml-sharp, ply2splat) are installed on first use via pinned_stack
+using the same Python executable that is running ComfyUI.
 """
 
 import os
@@ -25,7 +25,7 @@ _EXT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 if _EXT_DIR not in sys.path:
     sys.path.insert(0, _EXT_DIR)
-from pinned_stack import pip_install  # noqa: E402
+from pinned_stack import install_sharp  # noqa: E402
 
 
 def _ensure_deps():
@@ -34,11 +34,8 @@ def _ensure_deps():
         import sharp  # noqa: F401
         import ply2splat  # noqa: F401
     except ImportError:
-        req_path = os.path.join(_EXT_DIR, "requirements.txt")
-        if not os.path.exists(req_path):
-            raise RuntimeError(f"[SharpSplat] requirements.txt not found at {req_path}")
         print("[SharpSplat] Installing ml-sharp dependencies...")
-        pip_install(requirements=req_path)
+        install_sharp()
         print("[SharpSplat] Dependencies installed.")
 
 

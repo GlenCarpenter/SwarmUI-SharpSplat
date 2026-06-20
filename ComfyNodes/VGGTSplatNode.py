@@ -23,7 +23,7 @@ _EXT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 if _EXT_DIR not in sys.path:
     sys.path.insert(0, _EXT_DIR)
-from pinned_stack import pip_install  # noqa: E402
+from pinned_stack import install_vggt  # noqa: E402
 
 
 def _ensure_deps():
@@ -32,11 +32,8 @@ def _ensure_deps():
         import vggt  # noqa: F401
         import huggingface_hub  # noqa: F401
     except ImportError:
-        req_path = os.path.join(_EXT_DIR, "requirements.txt")
-        if not os.path.exists(req_path):
-            raise RuntimeError(f"[VGGTSplat] requirements.txt not found at {req_path}")
         print("[VGGTSplat] Installing VGGT dependencies...")
-        pip_install(requirements=req_path)
+        install_vggt()
         print("[VGGTSplat] Dependencies installed.")
 
 

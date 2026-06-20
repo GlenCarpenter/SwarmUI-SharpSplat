@@ -70,21 +70,19 @@ public static class SharpSplatAPI
             {
                 return;
             }
-            string requirementsPath = Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/requirements.txt");
-            if (!File.Exists(requirementsPath))
+            string extFolder = Path.GetFullPath(SharpSplatExtension.ExtFolder).Replace('\\', '/').TrimEnd('/');
+            string helperPath = $"{extFolder}/pinned_stack.py";
+            if (!File.Exists(helperPath))
             {
-                Logs.Warning("SharpSplat: requirements.txt not found, skipping dependency check.");
+                Logs.Warning("SharpSplat: pinned_stack.py not found, skipping dependency check.");
                 _dependenciesEnsured = true;
                 return;
             }
-            Logs.Info("SharpSplat: Checking/installing ml-sharp Python dependencies...");
+            Logs.Info("SharpSplat: Checking/installing ml-sharp and VGGT Python dependencies...");
             ProcessStartInfo psi = BuildPythonPsi();
-            psi.ArgumentList.Add("-m");
-            psi.ArgumentList.Add("pip");
-            psi.ArgumentList.Add("install");
-            psi.ArgumentList.Add("--quiet");
-            psi.ArgumentList.Add("-r");
-            psi.ArgumentList.Add(requirementsPath);
+            psi.ArgumentList.Add("-s");
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add($"import sys; sys.path.insert(0, '{extFolder}'); import pinned_stack; pinned_stack.install_all()");
             using Process process = Process.Start(psi);
             // Drain stdout and stderr concurrently before waiting, to prevent buffer deadlock.
             Task<string> pipOut = process.StandardOutput.ReadToEndAsync();
@@ -94,7 +92,7 @@ public static class SharpSplatAPI
             string pipErrStr = (await pipErr).Trim();
             if (process.ExitCode != 0)
             {
-                Logs.Warning($"SharpSplat: pip install exited with code {process.ExitCode}. {pipErrStr}");
+                Logs.Warning($"SharpSplat: dependency install exited with code {process.ExitCode}. {pipErrStr}");
             }
             else
             {
