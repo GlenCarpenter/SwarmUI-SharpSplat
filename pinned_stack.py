@@ -59,9 +59,27 @@ def pip_install(*packages, requirements=None, upgrade=False, no_deps=False):
         os.remove(constraints)
 
 
+def _installed_version(package):
+    """Returns the installed distribution version, or None if the package is absent."""
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 def ensure_pinned_scientific_stack(upgrade=False):
     """Installs the newest SciPy/OpenCV compatible with Swarm's numpy."""
-    pip_install(*SCIENTIFIC_PACKAGES, upgrade=upgrade)
+    missing = [pkg for pkg in SCIENTIFIC_PACKAGES if _installed_version(pkg) is None]
+    if not missing:
+        return
+    try:
+        pip_install(*missing, upgrade=upgrade)
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"[SharpSplat] Warning: could not install scientific stack "
+            f"({', '.join(missing)}): {exc}. Continuing with existing packages.",
+            file=sys.stderr,
+        )
 
 
 def install_model(package, deps):
