@@ -1,3 +1,8 @@
+# SciPy/OpenCV are installed at their newest versions that remain compatible
+# with the numpy already provided by SwarmUI's ComfyUI backend.
+scipy
+opencv-python-headless
+
 # ml-sharp: Monocular 3D Gaussian Splat generation from a single image.
 # https://github.com/apple/ml-sharp
 #

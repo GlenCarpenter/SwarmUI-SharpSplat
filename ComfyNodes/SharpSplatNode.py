@@ -23,6 +23,10 @@ from pathlib import Path
 # Absolute path to the extension root (parent of this ComfyNodes folder).
 _EXT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+if _EXT_DIR not in sys.path:
+    sys.path.insert(0, _EXT_DIR)
+from pinned_stack import pip_install  # noqa: E402
+
 
 def _ensure_deps():
     """Installs ml-sharp and ply2splat via pip if they are not yet importable."""
@@ -34,10 +38,7 @@ def _ensure_deps():
         if not os.path.exists(req_path):
             raise RuntimeError(f"[SharpSplat] requirements.txt not found at {req_path}")
         print("[SharpSplat] Installing ml-sharp dependencies...")
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "-r", req_path],
-            check=True,
-        )
+        pip_install(requirements=req_path)
         print("[SharpSplat] Dependencies installed.")
 
 
