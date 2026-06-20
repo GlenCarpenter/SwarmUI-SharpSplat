@@ -10,10 +10,6 @@ SCIENTIFIC_PACKAGES = (
     "opencv-python-headless",
 )
 
-#: Git packages whose own metadata pins conflicting numpy ranges (ml-sharp targets
-#: numpy 2.x, VGGT pins numpy<2). They are installed with --no-deps so they run
-#: against whatever numpy ComfyUI already provides, while their real dependencies
-#: (below) are installed separately at versions compatible with that numpy.
 ML_SHARP_PACKAGE = "git+https://github.com/apple/ml-sharp.git"
 VGGT_PACKAGE = "git+https://github.com/facebookresearch/vggt.git"
 
@@ -69,12 +65,7 @@ def ensure_pinned_scientific_stack(upgrade=False):
 
 
 def install_model(package, deps):
-    """Installs a git package's dependencies, then the package itself with --no-deps.
-
-    The dependencies are installed normally (numpy-pinned) so they resolve against
-    Swarm's numpy, then the git package is installed with --no-deps so its own
-    conflicting numpy pin is ignored.
-    """
+    """Installs a git package's dependencies, then the package itself with --no-deps."""
     if deps:
         pip_install(*deps)
     pip_install(package, no_deps=True)
@@ -91,11 +82,7 @@ def install_vggt():
 
 
 def install_all():
-    """Best-effort install of every SharpSplat git package (direct-python fallback).
-
-    Each model is installed independently so a failure in one (e.g. gsplat failing
-    to compile) does not block the others.
-    """
+    """Best-effort install of every SharpSplat git package"""
     failures = []
     for name, installer in (("ml-sharp", install_sharp), ("VGGT", install_vggt)):
         try:
