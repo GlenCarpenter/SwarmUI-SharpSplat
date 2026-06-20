@@ -39,6 +39,11 @@ _CKPT_URL = (
 )
 _REPO_URL = "https://github.com/NVlabs/InstantSplat.git"
 
+# Import the shared scientific-stack pin helper from the extension root.
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+from pinned_stack import ensure_pinned_scientific_stack, pip_install  # noqa: E402
+
 # Sentinel written after a successful pip install so we do not retry on every run.
 _DEPS_DONE = os.path.join(_SCRIPT_DIR, ".instantsplat_deps_installed")
 
@@ -99,9 +104,15 @@ def _install_deps():
         print("InstantSplat: No requirements.txt found, skipping pip install.")
         return
 
-    print("InstantSplat: Installing Python requirements (skipping torch/torchvision)...")
+    print("InstantSplat: Installing Python requirements (skipping torch/torchvision/scientific-stack)...")
 
-    _SKIP_PKGS = {"torch", "torchvision", "torchaudio"}
+    # Keep scipy and cv2 consumers in this repo aligned with SwarmUI's pinned stack.
+    ensure_pinned_scientific_stack(upgrade=True)
+
+    _SKIP_PKGS = {
+        "torch", "torchvision", "torchaudio",
+        "numpy", "scipy", "opencv-python", "opencv-python-headless",
+    }
     filtered_lines = []
     with open(req_path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -125,10 +136,8 @@ def _install_deps():
         filtered_req = tmp.name
 
     try:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--quiet", "-r", filtered_req],
-            check=True,
-        )
+        pip_install(requirements=filtered_req)
+        ensure_pinned_scientific_stack(upgrade=True)
     finally:
         os.unlink(filtered_req)
 
