@@ -47,6 +47,51 @@
     background: var(--sharpsplat-accent);
 }
 
+/* Tooltips render under body, outside the SharpSplat root and its theme variables. */
+.tooltip.sharpsplat-tooltip {
+    --bs-tooltip-bg: #20252a;
+    --bs-tooltip-color: #f4f7f8;
+    --bs-tooltip-opacity: 1;
+}
+
+.tooltip.sharpsplat-tooltip .tooltip-inner {
+    color: #f4f7f8;
+    background-color: #20252a;
+    border: 1px solid #56616b;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Bootstrap's secondary outline palette is too muted against some SwarmUI themes. */
+.sharpsplat-sidebar .btn-outline-secondary {
+    --bs-btn-color: var(--button-text);
+    --bs-btn-border-color: var(--button-border);
+    --bs-btn-hover-color: var(--button-foreground-hover);
+    --bs-btn-hover-bg: var(--button-background-hover);
+    --bs-btn-hover-border-color: var(--emphasis);
+    --bs-btn-focus-shadow-rgb: 86, 168, 216;
+    --bs-btn-active-color: var(--emphasis-text);
+    --bs-btn-active-bg: var(--emphasis);
+    --bs-btn-active-border-color: var(--emphasis);
+    color: var(--button-text);
+    background-color: var(--button-background);
+    border-color: var(--button-border);
+    font-weight: 600;
+}
+
+.sharpsplat-sidebar .btn-outline-secondary:hover,
+.sharpsplat-sidebar .btn-outline-secondary:focus-visible {
+    color: var(--button-foreground-hover);
+    background-color: var(--button-background-hover);
+    border-color: var(--emphasis);
+}
+
+.sharpsplat-sidebar .btn-outline-secondary:disabled {
+    color: color-mix(in srgb, var(--button-text) 55%, transparent);
+    background-color: color-mix(in srgb, var(--button-background) 55%, transparent);
+    border-color: color-mix(in srgb, var(--button-border) 55%, transparent);
+    opacity: 0.65;
+}
+
 /* Accordion */
 .sharpsplat-accordion {
     flex-shrink: 0;

@@ -216,7 +216,11 @@ class SharpSplatTabManager {
             return;
         }
         for (let element of root.querySelectorAll('[data-bs-toggle="tooltip"]')) {
-            bootstrap.Tooltip.getOrCreateInstance(element, { container: 'body', delay: { show: 350, hide: 50 } });
+            bootstrap.Tooltip.getOrCreateInstance(element, {
+                container: 'body',
+                customClass: 'sharpsplat-tooltip',
+                delay: { show: 350, hide: 50 }
+            });
         }
     }
 
