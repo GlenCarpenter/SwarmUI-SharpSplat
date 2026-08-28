@@ -6,14 +6,14 @@
  * converts the output to .splat format, then navigates to the dedicated
  * Splat Viewer tab and loads the result.
  *
- * Viewer: uses @mkkellogg/gaussian-splats-3d bundled locally via npm + rollup.
- * Run `npm install` in the extension folder to build Assets/splat-viewer.bundle.js.
+ * Viewer: runs @mkkellogg/gaussian-splats-3d in a same-origin sandboxed iframe.
+ * Run `npm install` in the extension folder to build Assets/splat-viewer-frame.bundle.js.
  */
 
 'use strict';
 
-/** Serves the locally-built GaussianSplats3D ES module bundle. */
-let sharpSplatBundleUrl = '/ExtensionFile/SharpSplatExtension/Assets/splat-viewer.bundle.js';
+/** Serves the isolated GaussianSplats3D viewer document. */
+let sharpSplatFrameUrl = '/ExtensionFile/SharpSplatExtension/Assets/splat-viewer-frame.html';
 
 /**
  * Fetches an image from a src URL (or data-URL) as a base64-encoded string.
@@ -43,20 +43,28 @@ async function sharpSplatGetImageBase64(src) {
  */
 class SharpSplatTabManager {
     constructor() {
-        /** @type {Promise|null} Cached import() promise for the viewer bundle. */
-        this._modulePromise = null;
-        /** @type {Object|null} Active GaussianSplats3D.Viewer instance. */
-        this._viewer = null;
+        /** @type {HTMLIFrameElement|null} Active isolated viewer frame. */
+        this._viewerFrame = null;
+        /** @type {boolean} Whether the active viewer frame has initialized. */
+        this._viewerFrameReady = false;
+        /** @type {boolean} Whether the frame has an active splat. */
+        this._viewerLoaded = false;
+        /** @type {Object|null} Latest serializable camera/canvas state from the frame. */
+        this._cameraState = null;
+        /** @type {number} Sequence used to correlate frame requests and responses. */
+        this._frameRequestId = 0;
+        /** @type {Map<number, {resolve: Function, reject: Function, timeout: number}>} Pending frame requests. */
+        this._frameRequests = new Map();
         /** @type {string|null} URL of the currently loaded splat. */
         this._currentUrl = null;
+        /** @type {string|null} Display name of the currently selected splat. */
+        this._currentFilename = null;
+        /** @type {boolean} Whether the Splat Viewer tab is currently visible. */
+        this._tabActive = false;
         /** @type {boolean} Whether DOM event handlers have been wired up. */
         this._uiReady = false;
-        /** @type {boolean} Whether the mouse is currently over the canvas. */
-        this._canvasHovered = false;
         /** @type {Object|null} Camera/target state captured after the first auto-framing, used by resetCamera(). */
         this._initialCameraState = null;
-        /** @type {number} Incremented each time a new viewer is created so orphaned RAF loops self-terminate. */
-        this._cameraSyncGen = 0;
         /** @type {string|null} Base64 image data selected in the sidebar dropzone (ml-sharp single-image mode). */
         this._inputImageBase64 = null;
         /** @type {string|null} Selected sidebar image filename (ml-sharp single-image mode). */
@@ -95,9 +103,7 @@ class SharpSplatTabManager {
             invertToggle.checked = localStorage.getItem('sharpsplat_invert_controls') === 'true';
             invertToggle.addEventListener('change', () => {
                 localStorage.setItem('sharpsplat_invert_controls', invertToggle.checked ? 'true' : 'false');
-                if (this._viewer && this._viewer.controls) {
-                    this._viewer.controls.rotateSpeed = invertToggle.checked ? -0.5 : 0.5;
-                }
+                this._sendFrameCommand('setInvertControls', { enabled: invertToggle.checked });
             });
         }
         // Accordion toggles — restore open state from localStorage.
@@ -109,15 +115,23 @@ class SharpSplatTabManager {
             let stored = localStorage.getItem(id);
             // Camera and Splats open by default; Settings and Export Canvas closed by default.
             let isOpen = stored !== null ? stored === 'true' : (id !== 'sharpsplat_acc_settings' && id !== 'sharpsplat_acc_export');
-            acc.classList.toggle('open', isOpen);
+            this._setAccordionState(acc, isOpen, false);
             let btn = acc.querySelector('.sharpsplat-accordion-header');
             if (btn) {
-                btn.addEventListener('click', () => {
-                    let open = acc.classList.toggle('open');
-                    localStorage.setItem(id, open ? 'true' : 'false');
-                });
+                let toggle = () => this._setAccordionState(acc, !acc.classList.contains('open'), true);
+                btn.addEventListener('click', toggle);
+                if (btn.getAttribute('role') === 'button') {
+                    btn.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggle();
+                        }
+                    });
+                }
             }
         }
+        this._setupSidebarResize();
+        this._setupTooltips();
         this._setupExportCanvas();
         // Restore and persist the auto-navigate toggle.
         let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
@@ -181,26 +195,274 @@ class SharpSplatTabManager {
                 }
             });
         }
-        // Track hover over the canvas wrap. On mouseenter we also focus the canvas so
-        // the keyboard listeners (redirected to the canvas by the rollup patch) fire only
-        // while the user is actively hovering the viewer.
-        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
-        if (canvasWrap) {
-            canvasWrap.addEventListener('mouseenter', () => {
-                this._canvasHovered = true;
-                let c = canvasWrap.querySelector('canvas');
-                if (c) { c.focus({ preventScroll: true }); }
-            });
-            canvasWrap.addEventListener('mouseleave', () => { this._canvasHovered = false; });
-        }
-        // When the tab is activated, refresh the file list and pre-warm the viewer bundle.
+        window.addEventListener('message', (e) => this._handleViewerMessage(e));
+        // Mount WebGL only while this tab is visible. This releases renderer and worker
+        // resources on every tab change without moving the host controls into an iframe.
         let tabBtn = document.getElementById('maintab_splatviewer');
         if (tabBtn) {
             tabBtn.addEventListener('click', () => {
                 this.refreshList();
-                this._loadModule();
+            });
+            tabBtn.addEventListener('shown.bs.tab', () => this._activateTab());
+            tabBtn.addEventListener('hidden.bs.tab', () => this._deactivateTab());
+        }
+        let tabPane = document.getElementById('splatviewer');
+        this._tabActive = !!(tabPane && (tabPane.classList.contains('active') || tabPane.classList.contains('show')));
+    }
+
+    /** Initializes Bootstrap tooltips for static SharpSplat controls when Bootstrap is available. */
+    _setupTooltips(root = document) {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) {
+            return;
+        }
+        for (let element of root.querySelectorAll('[data-bs-toggle="tooltip"]')) {
+            bootstrap.Tooltip.getOrCreateInstance(element, {
+                container: 'body',
+                customClass: 'sharpsplat-tooltip',
+                delay: { show: 350, hide: 50 }
             });
         }
+    }
+
+    /**
+     * Opens or closes an accordion, optionally animating to its measured content height.
+     * @param {HTMLElement} accordion
+     * @param {boolean} open
+     * @param {boolean} animate
+     */
+    _setAccordionState(accordion, open, animate) {
+        let body = accordion.querySelector(':scope > .sharpsplat-accordion-body');
+        let header = accordion.querySelector(':scope > .sharpsplat-accordion-header');
+        accordion.classList.toggle('open', open);
+        if (header) {
+            header.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+        localStorage.setItem(accordion.id, open ? 'true' : 'false');
+        if (!body) {
+            return;
+        }
+        if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            body.hidden = !open;
+            return;
+        }
+        if (body._sharpSplatAnimation) {
+            body._sharpSplatAnimation.cancel();
+        }
+        body.hidden = false;
+        let fullHeight = body.scrollHeight;
+        let animation = body.animate(
+            open ? [{ height: '0px', opacity: 0 }, { height: fullHeight + 'px', opacity: 1 }]
+                : [{ height: fullHeight + 'px', opacity: 1 }, { height: '0px', opacity: 0 }],
+            { duration: 180, easing: 'ease-out' }
+        );
+        body._sharpSplatAnimation = animation;
+        animation.onfinish = () => {
+            body.hidden = !open;
+            body._sharpSplatAnimation = null;
+        };
+    }
+
+    /** Sets up pointer, keyboard, and persisted sizing for the viewer sidebar. */
+    _setupSidebarResize() {
+        let root = document.querySelector('.sharpsplat-tab-root');
+        let sidebar = document.querySelector('.sharpsplat-sidebar');
+        let handle = document.getElementById('sharpsplat_sidebar_resizer');
+        if (!root || !sidebar || !handle) {
+            return;
+        }
+        let storedWidth = parseInt(localStorage.getItem('sharpsplat_sidebar_width'));
+        if (isFinite(storedWidth)) {
+            sidebar.style.width = Math.max(210, Math.min(520, storedWidth)) + 'px';
+        }
+        let resize = (clientX, clientY) => {
+            let mobile = window.matchMedia('(max-width: 720px)').matches;
+            if (mobile) {
+                let rootRect = root.getBoundingClientRect();
+                let height = Math.max(180, Math.min(rootRect.height * 0.7, clientY - rootRect.top));
+                sidebar.style.height = height + 'px';
+            }
+            else {
+                let rootRect = root.getBoundingClientRect();
+                let width = Math.max(210, Math.min(Math.min(520, rootRect.width * 0.46), clientX - rootRect.left));
+                sidebar.style.width = width + 'px';
+                localStorage.setItem('sharpsplat_sidebar_width', Math.round(width).toString());
+            }
+        };
+        handle.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            handle.classList.add('dragging');
+            handle.setPointerCapture(e.pointerId);
+        });
+        handle.addEventListener('pointermove', (e) => {
+            if (handle.hasPointerCapture(e.pointerId)) {
+                resize(e.clientX, e.clientY);
+            }
+        });
+        let endResize = (e) => {
+            if (handle.hasPointerCapture(e.pointerId)) {
+                handle.releasePointerCapture(e.pointerId);
+            }
+            handle.classList.remove('dragging');
+        };
+        handle.addEventListener('pointerup', endResize);
+        handle.addEventListener('pointercancel', endResize);
+        handle.addEventListener('dblclick', () => {
+            sidebar.style.width = '280px';
+            sidebar.style.height = '';
+            localStorage.removeItem('sharpsplat_sidebar_width');
+        });
+        handle.addEventListener('keydown', (e) => {
+            let mobile = window.matchMedia('(max-width: 720px)').matches;
+            let delta = e.shiftKey ? 40 : 10;
+            if ((!mobile && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) || (mobile && (e.key === 'ArrowUp' || e.key === 'ArrowDown'))) {
+                e.preventDefault();
+                let rect = sidebar.getBoundingClientRect();
+                resize(rect.right + (e.key === 'ArrowLeft' ? -delta : delta), rect.bottom + (e.key === 'ArrowUp' ? -delta : delta));
+            }
+        });
+    }
+
+    /** Restores the selected splat when the viewer tab becomes visible. */
+    _activateTab() {
+        this._tabActive = true;
+        this.refreshList();
+        this._mountViewerFrame();
+    }
+
+    /** Releases WebGL resources when the viewer tab is no longer visible. */
+    _deactivateTab() {
+        this._tabActive = false;
+        this._disposeViewer();
+        let status = document.getElementById('sharpsplat_status');
+        if (status && this._currentFilename) {
+            status.textContent = this._currentFilename + ' · Viewer paused while tab is inactive';
+        }
+    }
+
+    /** Removes the viewer iframe, destroying its event realm, WebGL context, and workers. */
+    _disposeViewer() {
+        if (this._viewerFrameReady) {
+            this._sendFrameCommand('dispose');
+        }
+        for (let request of this._frameRequests.values()) {
+            clearTimeout(request.timeout);
+            request.reject(new Error('Viewer frame was closed.'));
+        }
+        this._frameRequests.clear();
+        if (this._viewerFrame) {
+            this._viewerFrame.remove();
+            this._viewerFrame = null;
+        }
+        this._viewerFrameReady = false;
+        this._viewerLoaded = false;
+        this._cameraState = null;
+        this._initialCameraState = null;
+        let wrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (wrap) {
+            wrap.innerHTML = '';
+        }
+    }
+
+    /** Creates the sandboxed iframe that owns all GaussianSplats3D execution. */
+    _mountViewerFrame() {
+        if (!this._tabActive || this._viewerFrame) {
+            return;
+        }
+        let wrap = document.getElementById('sharpsplat_canvas_wrap');
+        if (!wrap) {
+            return;
+        }
+        let frame = document.createElement('iframe');
+        frame.className = 'sharpsplat-viewer-frame';
+        frame.title = 'Gaussian splat viewer';
+        frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+        frame.src = sharpSplatFrameUrl;
+        this._viewerFrame = frame;
+        wrap.replaceChildren(frame);
+    }
+
+    /** Posts a one-way command to the active viewer frame. */
+    _sendFrameCommand(type, payload = {}, requestId = null) {
+        if (!this._viewerFrameReady || !this._viewerFrame || !this._viewerFrame.contentWindow) {
+            return false;
+        }
+        this._viewerFrame.contentWindow.postMessage({ source: 'sharpsplat-host', type: type, payload: payload, requestId: requestId }, window.location.origin);
+        return true;
+    }
+
+    /** Sends a frame command and resolves with its correlated response. */
+    _requestFrame(type, payload = {}) {
+        return new Promise((resolve, reject) => {
+            let requestId = ++this._frameRequestId;
+            let timeout = setTimeout(() => {
+                this._frameRequests.delete(requestId);
+                reject(new Error('Viewer frame did not respond.'));
+            }, 10000);
+            this._frameRequests.set(requestId, { resolve: resolve, reject: reject, timeout: timeout });
+            if (!this._sendFrameCommand(type, payload, requestId)) {
+                clearTimeout(timeout);
+                this._frameRequests.delete(requestId);
+                reject(new Error('Viewer frame is not ready.'));
+            }
+        });
+    }
+
+    /** Handles status, camera, and request messages from the active viewer frame. */
+    _handleViewerMessage(event) {
+        if (event.origin !== window.location.origin || !this._viewerFrame || event.source !== this._viewerFrame.contentWindow
+            || !event.data || event.data.source !== 'sharpsplat-viewer') {
+            return;
+        }
+        let message = event.data;
+        let payload = message.payload || {};
+        if (message.type === 'ready') {
+            this._viewerFrameReady = true;
+            if (this._currentUrl) {
+                this._loadCurrentSplatInFrame();
+            }
+        }
+        else if (message.type === 'loaded') {
+            this._viewerLoaded = true;
+            let status = document.getElementById('sharpsplat_status');
+            if (status) {
+                status.textContent = this._currentFilename + ' · Orbit: left-drag · Zoom: scroll · Pan: right-drag';
+            }
+        }
+        else if (message.type === 'cameraChanged') {
+            this._cameraState = payload;
+            this._syncCameraInputs();
+            this._updateExportViewportBox();
+        }
+        else if (message.type === 'initialCamera') {
+            this._initialCameraState = payload;
+        }
+        else if (message.type === 'error') {
+            this._viewerLoaded = false;
+            let status = document.getElementById('sharpsplat_status');
+            if (status) {
+                status.textContent = 'Error loading ' + (this._currentFilename || 'splat') + ': ' + payload.message;
+            }
+        }
+        else if (message.type === 'response' && message.requestId !== null) {
+            let request = this._frameRequests.get(message.requestId);
+            if (request) {
+                clearTimeout(request.timeout);
+                this._frameRequests.delete(message.requestId);
+                request.resolve(payload);
+            }
+        }
+    }
+
+    /** Sends the selected splat and current control settings into the ready frame. */
+    _loadCurrentSplatInFrame() {
+        if (!this._currentUrl) {
+            return;
+        }
+        let invertToggle = document.getElementById('sharpsplat_setting_invert_controls');
+        this._viewerLoaded = false;
+        this._cameraState = null;
+        this._initialCameraState = null;
+        this._sendFrameCommand('load', { url: this._currentUrl, invertControls: !!(invertToggle && invertToggle.checked) });
     }
 
     /**
@@ -312,18 +574,17 @@ class SharpSplatTabManager {
      */
     _generateRepairPrompt() {
         let dx = 0, dy = 0, dz = 0, dpitch = 0, dyaw = 0, droll = 0;
-        if (this._viewer && this._viewer.camera && this._initialCameraState) {
-            let pos = this._viewer.camera.position;
+        if (this._cameraState && this._initialCameraState) {
+            let pos = this._cameraState.position;
             let init = this._initialCameraState.position;
             dx = Math.round((pos.x - init.x) * 1000) / 1000;
             dy = Math.round((pos.y - init.y) * 1000) / 1000;
             dz = Math.round((pos.z - init.z) * 1000) / 1000;
-            // camera.rotation (Euler XYZ) is kept live by Three.js — read deltas directly.
-            let rot = this._viewer.camera.rotation;
+            let rot = this._cameraState.rotation;
             let toDeg = v => Math.round(v * (180 / Math.PI) * 1000) / 1000;
-            dpitch = toDeg(rot.x - this._initialCameraState.rotationX);
-            dyaw   = toDeg(rot.y - this._initialCameraState.rotationY);
-            droll  = toDeg(rot.z - this._initialCameraState.rotationZ);
+            dpitch = toDeg(rot.x - this._initialCameraState.rotation.x);
+            dyaw   = toDeg(rot.y - this._initialCameraState.rotation.y);
+            droll  = toDeg(rot.z - this._initialCameraState.rotation.z);
         }
         let cameraJson = JSON.stringify({ x: dx, y: dy, z: dz, pitch: dpitch, yaw: dyaw, roll: droll });
         let prompt = 'Referring to the scene in image 1, restore the perspective of the scene in image 2. Repair the perspective and missing areas. The camera has moved by: ' + cameraJson;
@@ -390,7 +651,7 @@ class SharpSplatTabManager {
             }
         }
         exportBtn.addEventListener('click', () => {
-            if (!this._viewer) {
+            if (!this._viewerLoaded) {
                 showError('SharpSplat: Load a splat first before exporting.');
                 return;
             }
@@ -471,7 +732,7 @@ class SharpSplatTabManager {
     /**
      * Computes the crop rectangle (in canvas pixels) for the current resolution selection.
      * Returns {x, y, w, h} relative to the canvas top-left.
-     * @param {HTMLCanvasElement} canvas
+    * @param {{width: number, height: number}} canvas
      */
     _computeExportCropRect(canvas) {
         let cw = canvas.width;
@@ -521,8 +782,8 @@ class SharpSplatTabManager {
         if (!canvasWrap || !viewportDiv || !viewportBox) {
             return;
         }
-        let canvas = canvasWrap.querySelector('canvas');
-        if (!canvas) {
+        let canvas = this._cameraState ? this._cameraState.canvas : null;
+        if (!canvas || !canvas.width || !canvas.height) {
             viewportBox.style.display = 'none';
             return;
         }
@@ -549,27 +810,15 @@ class SharpSplatTabManager {
      * @param {boolean} saveToServer - true = Save to Outputs; false = Download.
      */
     async _doExportCanvas(saveToServer) {
-        let canvasWrap = document.getElementById('sharpsplat_canvas_wrap');
-        if (!canvasWrap) {
+        let capture;
+        try {
+            capture = await this._requestFrame('capture');
+        }
+        catch (err) {
+            showError('SharpSplat: ' + err.message);
             return;
         }
-        let canvas = canvasWrap.querySelector('canvas');
-        if (!canvas) {
-            showError('SharpSplat: No canvas found. Load a splat first.');
-            return;
-        }
-        // Capture the canvas — schedule within a rAF so the frame buffer is populated.
-        let dataUrl = await new Promise((resolve) => {
-            requestAnimationFrame(() => {
-                try {
-                    let raw = canvas.toDataURL('image/png');
-                    resolve(raw);
-                }
-                catch (e) {
-                    resolve(null);
-                }
-            });
-        });
+        let dataUrl = capture.dataUrl;
         if (!dataUrl || dataUrl === 'data:,') {
             showError('SharpSplat: Canvas capture returned empty data. The viewer may need preserveDrawingBuffer enabled.');
             return;
@@ -578,7 +827,7 @@ class SharpSplatTabManager {
         let img = new Image();
         img.src = dataUrl;
         await new Promise((resolve) => { img.onload = resolve; });
-        let crop = this._computeExportCropRect(canvas);
+        let crop = this._computeExportCropRect({ width: capture.width, height: capture.height });
         let offscreen = document.createElement('canvas');
         offscreen.width = crop.w;
         offscreen.height = crop.h;
@@ -905,54 +1154,17 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Starts a per-frame RAF loop that syncs camera position inputs whenever
-     * the camera moves (including click-to-focus, which doesn't emit a
-     * controls 'change' event). The loop self-terminates when a new viewer
-     * is created (via the generation counter) or when the viewer is disposed.
-     */
-    _startCameraSync() {
-        console.log(this._viewer.camera);
-        let gen = ++this._cameraSyncGen;
-        let lastX = null, lastY = null, lastZ = null;
-        let lastLX = null, lastLY = null, lastLZ = null;
-        const loop = () => {
-            if (gen !== this._cameraSyncGen) {
-                return;
-            }
-            if (!this._viewer || !this._viewer.camera) {
-                requestAnimationFrame(loop);
-                return;
-            }
-            let pos = this._viewer.camera.position;
-            let tgt = this._viewer.controls && this._viewer.controls.target;
-            let posValid = isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z);
-            let tgtValid = tgt && isFinite(tgt.x) && isFinite(tgt.y) && isFinite(tgt.z);
-            if (posValid || tgtValid) {
-                let active = document.activeElement;
-                if (!active || !active.classList.contains('sharpsplat-camera-input')) {
-                    let posChanged = posValid && (pos.x !== lastX || pos.y !== lastY || pos.z !== lastZ);
-                    let tgtChanged = tgtValid && (tgt.x !== lastLX || tgt.y !== lastLY || tgt.z !== lastLZ);
-                    if (posChanged || tgtChanged) {
-                        if (posValid) { lastX = pos.x; lastY = pos.y; lastZ = pos.z; }
-                        if (tgtValid) { lastLX = tgt.x; lastLY = tgt.y; lastLZ = tgt.z; }
-                        this._syncCameraInputs();
-                    }
-                }
-            }
-            requestAnimationFrame(loop);
-        };
-        requestAnimationFrame(loop);
-    }
-
-    /**
-     * Reads the current viewer camera position into the X/Y/Z inputs.
-     * No-op when no viewer is active.
+     * Reads the latest frame camera state into the X/Y/Z inputs.
      */
     _syncCameraInputs() {
-        if (!this._viewer || !this._viewer.camera) {
+        if (!this._cameraState) {
             return;
         }
-        let pos = this._viewer.camera.position;
+        let active = document.activeElement;
+        if (active && active.classList.contains('sharpsplat-camera-input')) {
+            return;
+        }
+        let pos = this._cameraState.position;
         // Bail out if camera has degenerate values (e.g. camera === target → OrbitControls produces ±Infinity).
         if (!isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z)) {
             return;
@@ -963,8 +1175,8 @@ class SharpSplatTabManager {
         if (xInput) { xInput.value = Math.round(pos.x * 1000) / 1000; }
         if (yInput) { yInput.value = Math.round(pos.y * 1000) / 1000; }
         if (zInput) { zInput.value = Math.round(pos.z * 1000) / 1000; }
-        if (this._viewer.controls) {
-            let tgt = this._viewer.controls.target;
+        if (this._cameraState.target) {
+            let tgt = this._cameraState.target;
             if (isFinite(tgt.x) && isFinite(tgt.y) && isFinite(tgt.z)) {
                 let lxInput = document.getElementById('sharpsplat_cam_lx');
                 let lyInput = document.getElementById('sharpsplat_cam_ly');
@@ -981,22 +1193,16 @@ class SharpSplatTabManager {
      * No-op when no viewer is active.
      */
     applyCameraPosition() {
-        if (!this._viewer) {
+        if (!this._viewerLoaded) {
             return;
         }
         let x = parseFloat(document.getElementById('sharpsplat_cam_x').value) || 0;
         let y = parseFloat(document.getElementById('sharpsplat_cam_y').value) || 0;
         let z = parseFloat(document.getElementById('sharpsplat_cam_z').value) || 0;
-        if (this._viewer.camera) {
-            this._viewer.camera.position.set(x, y, z);
-        }
-        if (this._viewer.controls) {
-            let lx = parseFloat(document.getElementById('sharpsplat_cam_lx').value) || 0;
-            let ly = parseFloat(document.getElementById('sharpsplat_cam_ly').value) || 0;
-            let lz = parseFloat(document.getElementById('sharpsplat_cam_lz').value) || 0;
-            this._viewer.controls.target.set(lx, ly, lz);
-            this._viewer.controls.update();
-        }
+        let lx = parseFloat(document.getElementById('sharpsplat_cam_lx').value) || 0;
+        let ly = parseFloat(document.getElementById('sharpsplat_cam_ly').value) || 0;
+        let lz = parseFloat(document.getElementById('sharpsplat_cam_lz').value) || 0;
+        this._sendFrameCommand('setCamera', { position: { x: x, y: y, z: z }, target: { x: lx, y: ly, z: lz } });
     }
 
     /**
@@ -1004,16 +1210,10 @@ class SharpSplatTabManager {
      * then re-primes OrbitControls and syncs the position inputs.
      */
     resetCamera() {
-        if (!this._initialCameraState || !this._viewer) return;
-
-        this._viewer.camera.position.copy(this._initialCameraState.position);
-        this._viewer.camera.quaternion.copy(this._initialCameraState.quaternion);
-        this._viewer.camera.up.copy(this._initialCameraState.up);
-        this._viewer.controls.target.copy(this._initialCameraState.target);
-        this._viewer.controls.update();
-
-        // Reflect the reset position in the camera inputs.
-        this._syncCameraInputs();
+        if (!this._initialCameraState || !this._viewerLoaded) {
+            return;
+        }
+        this._sendFrameCommand('resetCamera');
     }
 
     /**
@@ -1053,25 +1253,29 @@ class SharpSplatTabManager {
             }
             listDiv.innerHTML = '';
             for (let splat of splats) {
-                let row = createDiv(null, 'sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
+                let row = createDiv(null, 'list-group-item d-flex align-items-center p-0 sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
                 // Name button — loads the splat into the viewer.
                 let nameBtn = document.createElement('button');
-                nameBtn.className = 'sharpsplat-file-entry';
+                nameBtn.className = 'btn btn-sm border-0 rounded-0 sharpsplat-file-entry';
                 nameBtn.textContent = splat.filename;
                 nameBtn.title = splat.filename;
                 nameBtn.dataset.url = splat.url;
                 nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename);
                 // Download button — triggers a browser file download.
                 let dlBtn = document.createElement('a');
-                dlBtn.className = 'sharpsplat-icon-btn';
+                dlBtn.className = 'btn btn-sm btn-link sharpsplat-icon-btn';
                 dlBtn.title = 'Download ' + splat.filename;
+                dlBtn.dataset.bsToggle = 'tooltip';
+                dlBtn.setAttribute('aria-label', 'Download ' + splat.filename);
                 dlBtn.href = splat.url;
                 dlBtn.download = splat.filename;
                 dlBtn.innerHTML = '&#8615;';
                 // Delete button — removes the file after confirmation.
                 let delBtn = document.createElement('button');
-                delBtn.className = 'sharpsplat-icon-btn sharpsplat-delete-btn';
+                delBtn.className = 'btn btn-sm btn-link text-danger sharpsplat-icon-btn sharpsplat-delete-btn';
                 delBtn.title = 'Delete ' + splat.filename;
+                delBtn.dataset.bsToggle = 'tooltip';
+                delBtn.setAttribute('aria-label', 'Delete ' + splat.filename);
                 delBtn.innerHTML = '&#x1F5D1;';
                 delBtn.onclick = () => this.deleteSplat(splat.filename, row);
                 row.appendChild(nameBtn);
@@ -1079,6 +1283,7 @@ class SharpSplatTabManager {
                 row.appendChild(delBtn);
                 listDiv.appendChild(row);
             }
+            this._setupTooltips(listDiv);
         }
         catch (err) {
             listDiv.innerHTML = '<span class="sharpsplat-hint" style="color:#c66;">Error: ' + escapeHtml(err.message) + '</span>';
@@ -1108,14 +1313,8 @@ class SharpSplatTabManager {
             // If the deleted splat was loaded in the viewer, dispose and clear it.
             if (this._currentUrl && this._currentUrl.includes(encodeURIComponent(filename))) {
                 this._currentUrl = null;
-                if (this._viewer) {
-                    this._viewer.dispose();
-                    this._viewer = null;
-                }
-                let wrap = document.getElementById('sharpsplat_canvas_wrap');
-                if (wrap) {
-                    wrap.innerHTML = '';
-                }
+                this._currentFilename = null;
+                this._disposeViewer();
                 let status = document.getElementById('sharpsplat_status');
                 if (status) {
                     status.textContent = 'Select a splat from the list, or click \u201cGenerate 3D Splat\u201d on an image in the Generate tab.';
@@ -1134,17 +1333,6 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Loads the GaussianSplats3D ES module bundle, caching the result.
-     * Returns a Promise resolving to the module namespace object.
-     */
-    _loadModule() {
-        if (!this._modulePromise) {
-            this._modulePromise = import(sharpSplatBundleUrl);
-        }
-        return this._modulePromise;
-    }
-
-    /**
      * Loads a .splat file into the viewer by HTTP URL.
      * Disposes any previously active viewer instance before creating a new one.
      * @param {string} url - URL of the .splat file (e.g. /View/...).
@@ -1153,6 +1341,7 @@ class SharpSplatTabManager {
     async loadSplat(url, filename) {
         let status = document.getElementById('sharpsplat_status');
         this._currentUrl = url;
+        this._currentFilename = filename;
         for (let row of document.querySelectorAll('.sharpsplat-file-row')) {
             let nameBtn = row.querySelector('.sharpsplat-file-entry');
             row.classList.toggle('active', nameBtn && nameBtn.dataset.url === url);
@@ -1160,91 +1349,15 @@ class SharpSplatTabManager {
         if (status) {
             status.textContent = 'Loading ' + filename + '\u2026';
         }
-        // Dispose previous viewer before mounting a new one.
-        if (this._viewer) {
-            this._viewer.dispose();
-            this._viewer = null;
-        }
-        let wrap = document.getElementById('sharpsplat_canvas_wrap');
-        if (wrap) {
-            wrap.innerHTML = '';
-        }
-        try {
-            let GS3D = await this._loadModule();
-            let renderWidth = (wrap && wrap.clientWidth) || 800;
-            let renderHeight = (wrap && wrap.clientHeight) || 600;
-            this._viewer = new GS3D.Viewer({
-                'rootElement': wrap,
-                'cameraUp': [0, -1, 0],
-                'initialCameraPosition': [0, 0, 1],
-                'renderWidth': renderWidth,
-                'renderHeight': renderHeight,
-                'sharedMemoryForWorkers': false,
-                'gpuAcceleratedSort': false,
-                'sceneRevealMode': GS3D.SceneRevealMode.Instant,
-                'logLevel': GS3D.LogLevel.None,
-            });
-            await this._viewer.addSplatScene(url, {
-                'splatAlphaRemovalThreshold': 5,
-                'showLoadingUI': false,
-                'rotation': [0, 1, 0, 0],
-            });
-            this._viewer.start();
-            this._startCameraSync();
-
-            if (this._viewer.controls) {
-                this._viewer.controls.enabled = true;
-                let _invertToggle = document.getElementById('sharpsplat_setting_invert_controls');
-                if (_invertToggle && _invertToggle.checked) {
-                    this._viewer.controls.rotateSpeed = -0.5;
-                }
-            }
-
-            let _canvas = wrap.querySelector('canvas');
-            if (_canvas) {
-                // Make the canvas focusable so the redirected keydown listeners
-                // (on the canvas element, via rollup patches 3-5) only fire while
-                // the canvas has focus — preventing keyboard bleed to other tabs.
-                _canvas.tabIndex = -1;
-                _canvas.style.outline = 'none';
-                // Poll each frame until the viewer has auto-framed the scene and the camera
-                // has a valid non-origin position, then snapshot it for resetCamera().
-                const waitForCamera = () => {
-                    const p = this._viewer.camera?.position;
-                    const t = this._viewer.controls?.target;
-                    if (p && t &&
-                        isFinite(p.x) && isFinite(p.y) && isFinite(p.z) &&
-                        isFinite(t.x) && isFinite(t.y) && isFinite(t.z) &&
-                        (p.x !== 0 || p.y !== 0 || p.z !== 0))
-                    {
-                        let _rot = this._viewer.camera.rotation;
-                        this._initialCameraState = {
-                            position: p.clone(),
-                            rotationX: _rot.x,
-                            rotationY: _rot.y,
-                            rotationZ: _rot.z,
-                            up: this._viewer.camera.up.clone(),
-                            target: t.clone(),
-                        };
-                        this._syncCameraInputs();
-                    }
-                    else {
-                        requestAnimationFrame(waitForCamera);
-                    }
-                };
-                requestAnimationFrame(waitForCamera);
-            }
-            // Camera input sync is handled by the _startCameraSync() RAF loop above,
-            // which catches all camera movements including click-to-focus.
-            if (this._currentUrl === url && status) {
-                status.textContent = filename + ' \u00b7 Orbit: left-drag \u00b7 Zoom: scroll \u00b7 Pan: right-drag';
-            }
-        }
-        catch (err) {
+        if (!this._tabActive) {
             if (status) {
-                status.textContent = 'Error loading ' + filename + ': ' + err.message;
+                status.textContent = filename + ' · Ready when Splat Viewer is opened';
             }
-            console.error('SharpSplat: loadSplat error', err);
+            return;
+        }
+        this._mountViewerFrame();
+        if (this._viewerFrameReady) {
+            this._loadCurrentSplatInFrame();
         }
     }
 }

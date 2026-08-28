@@ -1,16 +1,14 @@
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import terser from '@rollup/plugin-terser';
-import { gaussianSplatsPatch } from './rollup.config.js';
 
 export default {
-    input: 'splat-viewer-entry.js',
+    input: 'splat-viewer-frame-entry.js',
     output: {
-        file: 'Assets/splat-viewer.bundle.js',
+        file: 'Assets/splat-viewer-frame.bundle.js',
         format: 'es',
         inlineDynamicImports: true,
     },
     plugins: [
-        gaussianSplatsPatch(),
         nodeResolve({ browser: true }),
         terser(),
     ],

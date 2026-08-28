@@ -1,25 +1,101 @@
 .sharpsplat-tab-root {
+    --sharpsplat-accent: #56a8d8;
+    --sharpsplat-panel: #181b1e;
+    --sharpsplat-panel-raised: #22262a;
+    --sharpsplat-border: #394047;
     display: flex;
     width: 100%;
     height: 100%;
     overflow: hidden;
+    background: #101214;
 }
 
 .sharpsplat-sidebar {
-    width: 240px;
+    width: 280px;
+    min-width: 210px;
+    max-width: min(46vw, 520px);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #444;
-    background: #1a1a1a;
+    background: var(--sharpsplat-panel);
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+.sharpsplat-sidebar-resizer {
+    position: relative;
+    width: 6px;
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: #15181a;
+    touch-action: none;
+    z-index: 5;
+}
+
+.sharpsplat-sidebar-resizer::after {
+    content: '';
+    position: absolute;
+    inset: 0 2px;
+    background: var(--sharpsplat-border);
+    transition: background 0.15s ease, inset 0.15s ease;
+}
+
+.sharpsplat-sidebar-resizer:hover::after,
+.sharpsplat-sidebar-resizer:focus-visible::after,
+.sharpsplat-sidebar-resizer.dragging::after {
+    inset: 0 1px;
+    background: var(--sharpsplat-accent);
+}
+
+/* Tooltips render under body, outside the SharpSplat root and its theme variables. */
+.tooltip.sharpsplat-tooltip {
+    --bs-tooltip-bg: #20252a;
+    --bs-tooltip-color: #f4f7f8;
+    --bs-tooltip-opacity: 1;
+}
+
+.tooltip.sharpsplat-tooltip .tooltip-inner {
+    color: #f4f7f8;
+    background-color: #20252a;
+    border: 1px solid #56616b;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Bootstrap's secondary outline palette is too muted against some SwarmUI themes. */
+.sharpsplat-sidebar .btn-outline-secondary {
+    --bs-btn-color: var(--button-text);
+    --bs-btn-border-color: var(--button-border);
+    --bs-btn-hover-color: var(--button-foreground-hover);
+    --bs-btn-hover-bg: var(--button-background-hover);
+    --bs-btn-hover-border-color: var(--emphasis);
+    --bs-btn-focus-shadow-rgb: 86, 168, 216;
+    --bs-btn-active-color: var(--emphasis-text);
+    --bs-btn-active-bg: var(--emphasis);
+    --bs-btn-active-border-color: var(--emphasis);
+    color: var(--button-text);
+    background-color: var(--button-background);
+    border-color: var(--button-border);
+    font-weight: 600;
+}
+
+.sharpsplat-sidebar .btn-outline-secondary:hover,
+.sharpsplat-sidebar .btn-outline-secondary:focus-visible {
+    color: var(--button-foreground-hover);
+    background-color: var(--button-background-hover);
+    border-color: var(--emphasis);
+}
+
+.sharpsplat-sidebar .btn-outline-secondary:disabled {
+    color: color-mix(in srgb, var(--button-text) 55%, transparent);
+    background-color: color-mix(in srgb, var(--button-background) 55%, transparent);
+    border-color: color-mix(in srgb, var(--button-border) 55%, transparent);
+    opacity: 0.65;
 }
 
 /* Accordion */
 .sharpsplat-accordion {
     flex-shrink: 0;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--sharpsplat-border);
 }
 
 .sharpsplat-accordion-flex {
@@ -33,14 +109,15 @@
     display: flex;
     align-items: center;
     width: 100%;
-    padding: 7px 10px;
+    min-height: 38px;
+    padding: 8px 12px;
     background: none;
     border: none;
-    color: #aaa;
+    color: #b8c0c7;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
     cursor: pointer;
     text-align: left;
     gap: 6px;
@@ -48,14 +125,19 @@
 }
 
 .sharpsplat-accordion-header:hover {
-    color: #ddd;
-    background: #222;
+    color: #f1f5f7;
+    background: var(--sharpsplat-panel-raised);
+}
+
+.sharpsplat-accordion-header:focus-visible {
+    outline: 2px solid var(--sharpsplat-accent);
+    outline-offset: -2px;
 }
 
 .sharpsplat-accordion-arrow {
     font-size: 9px;
     display: inline-block;
-    transition: transform 0.15s;
+    transition: transform 0.2s ease;
     flex-shrink: 0;
 }
 
@@ -64,7 +146,6 @@
 }
 
 .sharpsplat-accordion-body {
-    display: none;
     overflow: hidden;
 }
 
@@ -79,28 +160,18 @@
     min-height: 0;
 }
 
-.sharpsplat-accordion.open > .sharpsplat-accordion-body {
-    display: block;
-}
-
 .sharpsplat-accordion-flex.open > .sharpsplat-accordion-body {
     display: flex;
 }
 
 .sharpsplat-acc-action-btn {
     margin-left: auto;
-    background: none;
-    border: none;
-    color: #666;
+    width: 26px;
+    height: 26px;
+    padding: 0;
     font-size: 14px;
-    cursor: pointer;
-    padding: 0 2px;
     line-height: 1;
     flex-shrink: 0;
-}
-
-.sharpsplat-acc-action-btn:hover {
-    color: #ccc;
 }
 
 /* Camera section (legacy class kept for camera-controls/group/row/label/input/btns) */
@@ -155,18 +226,8 @@
 
 .sharpsplat-camera-input {
     flex: 1;
-    background: #2a2a2a;
-    border: 1px solid #555;
-    color: #ccc;
     font-size: 12px;
-    padding: 4px 6px;
-    border-radius: 3px;
     min-width: 0;
-}
-
-.sharpsplat-camera-input:focus {
-    outline: none;
-    border-color: #7bb3f0;
 }
 
 .sharpsplat-camera-btns {
@@ -175,10 +236,8 @@
     gap: 6px;
 }
 
-.sharpsplat-camera-btns .basic-button {
+.sharpsplat-camera-btns .btn {
     width: 100%;
-    font-size: 12px;
-    padding: 5px 8px;
 }
 
 .sharpsplat-file-list {
@@ -197,60 +256,29 @@
     flex: 1;
     min-width: 0;
     padding: 7px 6px 7px 10px;
-    background: none;
-    border: none;
-    color: #ccc;
     font-size: 12px;
     text-align: left;
-    cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.sharpsplat-file-entry:hover {
-    background: none;
-    color: #fff;
-}
-
 .sharpsplat-file-row {
-    display: flex;
-    align-items: center;
     width: 100%;
-}
-
-.sharpsplat-file-row:hover {
-    background: #2a2a2a;
-}
-
-.sharpsplat-file-row.active {
-    background: #1e3a5f;
+    border-left: 0;
+    border-right: 0;
 }
 
 .sharpsplat-file-row.active .sharpsplat-file-entry {
-    color: #7bb3f0;
+    color: inherit;
 }
 
 .sharpsplat-icon-btn {
     flex-shrink: 0;
-    padding: 4px 6px;
-    background: none;
-    border: none;
-    color: #888;
+    padding: 4px 7px;
     font-size: 14px;
-    cursor: pointer;
     line-height: 1;
     text-decoration: none;
-    display: flex;
-    align-items: center;
-}
-
-.sharpsplat-icon-btn:hover {
-    color: #fff;
-}
-
-.sharpsplat-delete-btn:hover {
-    color: #e06060;
 }
 
 .sharpsplat-viewer-panel {
@@ -263,11 +291,12 @@
 }
 
 .sharpsplat-viewer-status {
-    padding: 6px 12px;
+    min-height: 38px;
+    padding: 9px 14px;
     font-size: 13px;
     color: #aaa;
-    background: #1a1a1a;
-    border-bottom: 1px solid #444;
+    background: var(--sharpsplat-panel);
+    border-bottom: 1px solid var(--sharpsplat-border);
     flex-shrink: 0;
 }
 
@@ -283,6 +312,14 @@
     display: block;
     width: 100%;
     height: 100%;
+}
+
+.sharpsplat-viewer-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #101214;
 }
 
 /* Settings panel */
@@ -309,67 +346,25 @@
     min-width: 0;
 }
 
-/* Toggle switch */
-.sharpsplat-toggle {
-    position: relative;
-    display: inline-block;
-    width: 34px;
-    height: 18px;
+/* Bootstrap switch layout */
+.sharpsplat-switch {
+    min-height: 0;
+    margin: 0;
+    padding-left: 2.5em;
     flex-shrink: 0;
+}
+
+.sharpsplat-switch .form-check-input {
+    margin-top: 0;
     cursor: pointer;
 }
 
-.sharpsplat-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-}
-
-.sharpsplat-toggle-slider {
-    position: absolute;
-    inset: 0;
-    background: #444;
-    border-radius: 18px;
-    transition: background 0.2s;
-}
-
-.sharpsplat-toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    left: 3px;
-    top: 3px;
-    background: #aaa;
-    border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-}
-
-.sharpsplat-toggle input:checked + .sharpsplat-toggle-slider {
-    background: #2a6db5;
-}
-
-.sharpsplat-toggle input:checked + .sharpsplat-toggle-slider::before {
-    transform: translateX(16px);
-    background: #fff;
-}
-
-/* Output format select */
 .sharpsplat-settings-select {
-    background: #2a2a2a;
-    border: 1px solid #555;
-    color: #ccc;
+    width: auto;
+    max-width: 55%;
     font-size: 12px;
-    padding: 3px 6px;
-    border-radius: 3px;
     flex-shrink: 0;
     cursor: pointer;
-}
-
-.sharpsplat-settings-select:focus {
-    outline: none;
-    border-color: #7bb3f0;
 }
 
 /* Input image section */
@@ -416,10 +411,8 @@
     gap: 6px;
 }
 
-.sharpsplat-input-controls .basic-button {
+.sharpsplat-input-controls .btn {
     flex: 1;
-    font-size: 12px;
-    padding: 5px 8px;
 }
 
 .sharpsplat-input-preview {
@@ -615,19 +608,8 @@
     gap: 5px;
 }
 
-#sharpsplat_export_actions .basic-button {
+#sharpsplat_export_actions .btn {
     width: 100%;
-    font-size: 12px;
-    padding: 6px 8px;
-}
-
-.sharpsplat-export-cancel-btn {
-    background: #3a1f1f !important;
-    border-color: #774 !important;
-}
-
-.sharpsplat-export-cancel-btn:hover {
-    background: #5a2f2f !important;
 }
 
 /* Repair Prompt button */
@@ -663,4 +645,44 @@
 
 .sharpsplat-toast.visible {
     opacity: 1;
+}
+
+@media (max-width: 720px) {
+    .sharpsplat-tab-root {
+        flex-direction: column;
+    }
+
+    .sharpsplat-sidebar {
+        width: 100% !important;
+        min-width: 0;
+        max-width: none;
+        height: 42%;
+        min-height: 180px;
+        max-height: 70%;
+    }
+
+    .sharpsplat-sidebar-resizer {
+        width: 100%;
+        height: 6px;
+        flex-basis: 6px;
+        cursor: row-resize;
+    }
+
+    .sharpsplat-sidebar-resizer::after {
+        inset: 2px 0;
+    }
+
+    .sharpsplat-sidebar-resizer:hover::after,
+    .sharpsplat-sidebar-resizer:focus-visible::after,
+    .sharpsplat-sidebar-resizer.dragging::after {
+        inset: 1px 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sharpsplat-accordion-arrow,
+    .sharpsplat-sidebar-resizer::after,
+    .sharpsplat-toast {
+        transition: none;
+    }
 }
