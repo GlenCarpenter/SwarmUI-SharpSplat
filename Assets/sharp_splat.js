@@ -131,6 +131,7 @@ class SharpSplatTabManager {
             }
         }
         this._setupSidebarResize();
+        this._setupTooltips();
         this._setupExportCanvas();
         // Restore and persist the auto-navigate toggle.
         let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
@@ -207,6 +208,16 @@ class SharpSplatTabManager {
         }
         let tabPane = document.getElementById('splatviewer');
         this._tabActive = !!(tabPane && (tabPane.classList.contains('active') || tabPane.classList.contains('show')));
+    }
+
+    /** Initializes Bootstrap tooltips for static SharpSplat controls when Bootstrap is available. */
+    _setupTooltips(root = document) {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) {
+            return;
+        }
+        for (let element of root.querySelectorAll('[data-bs-toggle="tooltip"]')) {
+            bootstrap.Tooltip.getOrCreateInstance(element, { container: 'body', delay: { show: 350, hide: 50 } });
+        }
     }
 
     /**
@@ -1238,25 +1249,29 @@ class SharpSplatTabManager {
             }
             listDiv.innerHTML = '';
             for (let splat of splats) {
-                let row = createDiv(null, 'sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
+                let row = createDiv(null, 'list-group-item d-flex align-items-center p-0 sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
                 // Name button — loads the splat into the viewer.
                 let nameBtn = document.createElement('button');
-                nameBtn.className = 'sharpsplat-file-entry';
+                nameBtn.className = 'btn btn-sm border-0 rounded-0 sharpsplat-file-entry';
                 nameBtn.textContent = splat.filename;
                 nameBtn.title = splat.filename;
                 nameBtn.dataset.url = splat.url;
                 nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename);
                 // Download button — triggers a browser file download.
                 let dlBtn = document.createElement('a');
-                dlBtn.className = 'sharpsplat-icon-btn';
+                dlBtn.className = 'btn btn-sm btn-link sharpsplat-icon-btn';
                 dlBtn.title = 'Download ' + splat.filename;
+                dlBtn.dataset.bsToggle = 'tooltip';
+                dlBtn.setAttribute('aria-label', 'Download ' + splat.filename);
                 dlBtn.href = splat.url;
                 dlBtn.download = splat.filename;
                 dlBtn.innerHTML = '&#8615;';
                 // Delete button — removes the file after confirmation.
                 let delBtn = document.createElement('button');
-                delBtn.className = 'sharpsplat-icon-btn sharpsplat-delete-btn';
+                delBtn.className = 'btn btn-sm btn-link text-danger sharpsplat-icon-btn sharpsplat-delete-btn';
                 delBtn.title = 'Delete ' + splat.filename;
+                delBtn.dataset.bsToggle = 'tooltip';
+                delBtn.setAttribute('aria-label', 'Delete ' + splat.filename);
                 delBtn.innerHTML = '&#x1F5D1;';
                 delBtn.onclick = () => this.deleteSplat(splat.filename, row);
                 row.appendChild(nameBtn);
@@ -1264,6 +1279,7 @@ class SharpSplatTabManager {
                 row.appendChild(delBtn);
                 listDiv.appendChild(row);
             }
+            this._setupTooltips(listDiv);
         }
         catch (err) {
             listDiv.innerHTML = '<span class="sharpsplat-hint" style="color:#c66;">Error: ' + escapeHtml(err.message) + '</span>';

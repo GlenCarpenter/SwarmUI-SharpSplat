@@ -121,18 +121,12 @@
 
 .sharpsplat-acc-action-btn {
     margin-left: auto;
-    background: none;
-    border: none;
-    color: #666;
+    width: 26px;
+    height: 26px;
+    padding: 0;
     font-size: 14px;
-    cursor: pointer;
-    padding: 0 2px;
     line-height: 1;
     flex-shrink: 0;
-}
-
-.sharpsplat-acc-action-btn:hover {
-    color: #ccc;
 }
 
 /* Camera section (legacy class kept for camera-controls/group/row/label/input/btns) */
@@ -187,18 +181,8 @@
 
 .sharpsplat-camera-input {
     flex: 1;
-    background: #2a2a2a;
-    border: 1px solid #555;
-    color: #ccc;
     font-size: 12px;
-    padding: 4px 6px;
-    border-radius: 3px;
     min-width: 0;
-}
-
-.sharpsplat-camera-input:focus {
-    outline: none;
-    border-color: #7bb3f0;
 }
 
 .sharpsplat-camera-btns {
@@ -207,10 +191,8 @@
     gap: 6px;
 }
 
-.sharpsplat-camera-btns .basic-button {
+.sharpsplat-camera-btns .btn {
     width: 100%;
-    font-size: 12px;
-    padding: 5px 8px;
 }
 
 .sharpsplat-file-list {
@@ -229,60 +211,29 @@
     flex: 1;
     min-width: 0;
     padding: 7px 6px 7px 10px;
-    background: none;
-    border: none;
-    color: #ccc;
     font-size: 12px;
     text-align: left;
-    cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.sharpsplat-file-entry:hover {
-    background: none;
-    color: #fff;
-}
-
 .sharpsplat-file-row {
-    display: flex;
-    align-items: center;
     width: 100%;
-}
-
-.sharpsplat-file-row:hover {
-    background: #2a2a2a;
-}
-
-.sharpsplat-file-row.active {
-    background: #1e3a5f;
+    border-left: 0;
+    border-right: 0;
 }
 
 .sharpsplat-file-row.active .sharpsplat-file-entry {
-    color: #7bb3f0;
+    color: inherit;
 }
 
 .sharpsplat-icon-btn {
     flex-shrink: 0;
-    padding: 4px 6px;
-    background: none;
-    border: none;
-    color: #888;
+    padding: 4px 7px;
     font-size: 14px;
-    cursor: pointer;
     line-height: 1;
     text-decoration: none;
-    display: flex;
-    align-items: center;
-}
-
-.sharpsplat-icon-btn:hover {
-    color: #fff;
-}
-
-.sharpsplat-delete-btn:hover {
-    color: #e06060;
 }
 
 .sharpsplat-viewer-panel {
@@ -350,67 +301,25 @@
     min-width: 0;
 }
 
-/* Toggle switch */
-.sharpsplat-toggle {
-    position: relative;
-    display: inline-block;
-    width: 34px;
-    height: 18px;
+/* Bootstrap switch layout */
+.sharpsplat-switch {
+    min-height: 0;
+    margin: 0;
+    padding-left: 2.5em;
     flex-shrink: 0;
+}
+
+.sharpsplat-switch .form-check-input {
+    margin-top: 0;
     cursor: pointer;
 }
 
-.sharpsplat-toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-    position: absolute;
-}
-
-.sharpsplat-toggle-slider {
-    position: absolute;
-    inset: 0;
-    background: #444;
-    border-radius: 18px;
-    transition: background 0.2s;
-}
-
-.sharpsplat-toggle-slider::before {
-    content: '';
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    left: 3px;
-    top: 3px;
-    background: #aaa;
-    border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-}
-
-.sharpsplat-toggle input:checked + .sharpsplat-toggle-slider {
-    background: #2a6db5;
-}
-
-.sharpsplat-toggle input:checked + .sharpsplat-toggle-slider::before {
-    transform: translateX(16px);
-    background: #fff;
-}
-
-/* Output format select */
 .sharpsplat-settings-select {
-    background: #2a2a2a;
-    border: 1px solid #555;
-    color: #ccc;
+    width: auto;
+    max-width: 55%;
     font-size: 12px;
-    padding: 3px 6px;
-    border-radius: 3px;
     flex-shrink: 0;
     cursor: pointer;
-}
-
-.sharpsplat-settings-select:focus {
-    outline: none;
-    border-color: #7bb3f0;
 }
 
 /* Input image section */
@@ -457,10 +366,8 @@
     gap: 6px;
 }
 
-.sharpsplat-input-controls .basic-button {
+.sharpsplat-input-controls .btn {
     flex: 1;
-    font-size: 12px;
-    padding: 5px 8px;
 }
 
 .sharpsplat-input-preview {
@@ -656,19 +563,8 @@
     gap: 5px;
 }
 
-#sharpsplat_export_actions .basic-button {
+#sharpsplat_export_actions .btn {
     width: 100%;
-    font-size: 12px;
-    padding: 6px 8px;
-}
-
-.sharpsplat-export-cancel-btn {
-    background: #3a1f1f !important;
-    border-color: #774 !important;
-}
-
-.sharpsplat-export-cancel-btn:hover {
-    background: #5a2f2f !important;
 }
 
 /* Repair Prompt button */
@@ -741,8 +637,6 @@
 @media (prefers-reduced-motion: reduce) {
     .sharpsplat-accordion-arrow,
     .sharpsplat-sidebar-resizer::after,
-    .sharpsplat-toggle-slider,
-    .sharpsplat-toggle-slider::before,
     .sharpsplat-toast {
         transition: none;
     }

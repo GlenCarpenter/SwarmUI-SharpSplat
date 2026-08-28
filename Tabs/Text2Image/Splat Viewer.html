@@ -2,20 +2,19 @@
     <div class="sharpsplat-sidebar">
         <!-- Settings accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_settings">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_settings_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_settings_body">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_settings_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_settings_body" title="Configure generation, output, and viewer behavior" data-bs-toggle="tooltip" data-bs-placement="right">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Settings
             </button>
             <div class="sharpsplat-accordion-body" id="sharpsplat_acc_settings_body">
                 <div class="sharpsplat-settings-row">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_auto_navigate">Open in viewer after generation</label>
-                    <label class="sharpsplat-toggle">
-                        <input type="checkbox" id="sharpsplat_setting_auto_navigate">
-                        <span class="sharpsplat-toggle-slider"></span>
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_auto_navigate" title="Switch to this tab automatically when reconstruction finishes" data-bs-toggle="tooltip" data-bs-placement="right">Open in viewer after generation</label>
+                    <label class="form-check form-switch sharpsplat-switch">
+                        <input class="form-check-input" type="checkbox" id="sharpsplat_setting_auto_navigate" title="Automatically open completed splats">
                     </label>
                 </div>
                 <div class="sharpsplat-settings-row">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_model">Reconstruction model</label>
-                    <select class="sharpsplat-settings-select" id="sharpsplat_setting_model">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_model" title="Choose the model used to reconstruct a 3D splat from the selected input" data-bs-toggle="tooltip" data-bs-placement="right">Reconstruction model</label>
+                    <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_setting_model" title="Select the reconstruction model">
                         <option value="mlsharp">ml-sharp</option>
                         <option value="vggt">VGGT</option>
                         <option value="instantsplat">InstantSplat</option>
@@ -23,117 +22,114 @@
                     </select>
                 </div>
                 <div class="sharpsplat-settings-row sharpsplat-vggt-only" id="sharpsplat_row_pad_to_square" style="display:none">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_pad_to_square">Pad images to square</label>
-                    <label class="sharpsplat-toggle">
-                        <input type="checkbox" id="sharpsplat_setting_pad_to_square">
-                        <span class="sharpsplat-toggle-slider"></span>
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_pad_to_square" title="Preserve the full frame by padding non-square images instead of cropping them" data-bs-toggle="tooltip" data-bs-placement="right">Pad images to square</label>
+                    <label class="form-check form-switch sharpsplat-switch">
+                        <input class="form-check-input" type="checkbox" id="sharpsplat_setting_pad_to_square" title="Pad non-square source images">
                     </label>
                 </div>
                 <div class="sharpsplat-settings-row">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_output_format">Output format</label>
-                    <select class="sharpsplat-settings-select" id="sharpsplat_setting_output_format">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_output_format" title="PLY preserves source data; SPLAT is a compact viewer-friendly format" data-bs-toggle="tooltip" data-bs-placement="right">Output format</label>
+                    <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_setting_output_format" title="Choose the generated splat file format">
                         <option value="ply">PLY</option>
                         <option value="splat">SPLAT</option>
                     </select>
                 </div>
                 <div class="sharpsplat-settings-row">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_repair_prompt">Generate Repair Prompt button</label>
-                    <label class="sharpsplat-toggle">
-                        <input type="checkbox" id="sharpsplat_setting_repair_prompt">
-                        <span class="sharpsplat-toggle-slider"></span>
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_repair_prompt" title="Show an export action that copies a camera-aware prompt for the ml-sharp repair workflow" data-bs-toggle="tooltip" data-bs-placement="right">Generate Repair Prompt button</label>
+                    <label class="form-check form-switch sharpsplat-switch">
+                        <input class="form-check-input" type="checkbox" id="sharpsplat_setting_repair_prompt" title="Show the repair prompt action">
                     </label>
                 </div>
             </div>
         </div>
         <!-- Input accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_input">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_input_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_input_body">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_input_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_input_body" title="Choose source images and start reconstruction" data-bs-toggle="tooltip" data-bs-placement="right">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Input Image
             </button>
             <div class="sharpsplat-accordion-body" id="sharpsplat_acc_input_body">
                 <div class="sharpsplat-input-wrap">
-                    <div class="sharpsplat-dropzone" id="sharpsplat_dropzone">
+                    <div class="sharpsplat-dropzone" id="sharpsplat_dropzone" title="Drop source images here, or use Browse below" data-bs-toggle="tooltip" data-bs-placement="right">
                         <div class="sharpsplat-dropzone-main" id="sharpsplat_dropzone_main">Drop a single image here</div>
                         <div class="sharpsplat-dropzone-sub" id="sharpsplat_dropzone_sub">or click Browse to select</div>
                         <input type="file" id="sharpsplat_input_file" accept="image/*" hidden>
                     </div>
                     <div class="sharpsplat-input-controls">
-                        <button class="basic-button" id="sharpsplat_input_browse">Browse</button>
-                        <button class="basic-button" id="sharpsplat_input_clear">Clear</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_input_browse" title="Select source images from your device" data-bs-toggle="tooltip">Browse</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_input_clear" title="Remove all selected source images" data-bs-toggle="tooltip">Clear</button>
                     </div>
                     <div class="sharpsplat-input-preview" id="sharpsplat_input_preview_wrap">
                         <img class="sharpsplat-input-preview-image" id="sharpsplat_input_preview" alt="Selected input preview">
                     </div>
                     <div class="sharpsplat-input-name" id="sharpsplat_input_name">No image selected.</div>
-                    <button class="basic-button" id="sharpsplat_generate_btn" disabled>Generate Splat</button>
+                    <button class="btn btn-sm btn-primary" id="sharpsplat_generate_btn" title="Run the selected reconstruction model on these inputs" data-bs-toggle="tooltip" disabled>Generate Splat</button>
                 </div>
             </div>
         </div>
         <!-- Camera accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_camera">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_camera_body">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_camera_body" title="Inspect or enter the viewer camera position and target" data-bs-toggle="tooltip" data-bs-placement="right">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Camera
             </button>
             <div class="sharpsplat-accordion-body" id="sharpsplat_acc_camera_body">
                 <div class="sharpsplat-camera-controls">
                     <div class="sharpsplat-camera-group">
-                        <div class="sharpsplat-camera-group-label">Camera Position</div>
+                        <div class="sharpsplat-camera-group-label" title="The camera location in 3D world coordinates" data-bs-toggle="tooltip" data-bs-placement="right">Camera Position</div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">X</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_x" step="0.1" value="0">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_x" step="0.1" value="0" title="Camera X coordinate">
                         </div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">Y</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_y" step="0.1" value="0">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_y" step="0.1" value="0" title="Camera Y coordinate">
                         </div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">Z</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_z" step="0.1" value="1">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_z" step="0.1" value="1" title="Camera Z coordinate">
                         </div>
                     </div>
                     <div class="sharpsplat-camera-group">
-                        <div class="sharpsplat-camera-group-label">Look At</div>
+                        <div class="sharpsplat-camera-group-label" title="The 3D point that the camera is aimed toward" data-bs-toggle="tooltip" data-bs-placement="right">Look At</div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">X</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_lx" step="0.1" value="0">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_lx" step="0.1" value="0" title="Target X coordinate">
                         </div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">Y</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_ly" step="0.1" value="0">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_ly" step="0.1" value="0" title="Target Y coordinate">
                         </div>
                         <div class="sharpsplat-camera-row">
                             <label class="sharpsplat-camera-label">Z</label>
-                            <input class="sharpsplat-camera-input" type="number" id="sharpsplat_cam_lz" step="0.1" value="0">
+                            <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_cam_lz" step="0.1" value="0" title="Target Z coordinate">
                         </div>
                     </div>
                     <div class="sharpsplat-settings-row">
-                        <label class="sharpsplat-settings-label" for="sharpsplat_setting_invert_controls">Invert orbital controls</label>
-                        <label class="sharpsplat-toggle">
-                            <input type="checkbox" id="sharpsplat_setting_invert_controls">
-                            <span class="sharpsplat-toggle-slider"></span>
+                        <label class="sharpsplat-settings-label" for="sharpsplat_setting_invert_controls" title="Reverse the direction used when orbiting around the splat" data-bs-toggle="tooltip" data-bs-placement="right">Invert orbital controls</label>
+                        <label class="form-check form-switch sharpsplat-switch">
+                            <input class="form-check-input" type="checkbox" id="sharpsplat_setting_invert_controls" title="Reverse orbit direction">
                         </label>
                     </div>
                     <div class="sharpsplat-camera-btns">
-                        <button class="basic-button" id="sharpsplat_cam_apply">Apply</button>
-                        <button class="basic-button" id="sharpsplat_cam_reset">Reset Camera</button>
+                        <button class="btn btn-sm btn-primary" id="sharpsplat_cam_apply" title="Move the viewer camera to the entered coordinates" data-bs-toggle="tooltip">Apply</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_cam_reset" title="Restore the camera framing created when this splat loaded" data-bs-toggle="tooltip">Reset Camera</button>
                     </div>
                 </div>
             </div>
         </div>
         <!-- Export Canvas accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_export">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_export_body">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_export_body" title="Capture the current viewer angle as a PNG image" data-bs-toggle="tooltip" data-bs-placement="right">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Export Canvas
             </button>
             <div class="sharpsplat-accordion-body" id="sharpsplat_acc_export_body">
                 <div class="sharpsplat-export-wrap">
-                    <button class="basic-button" id="sharpsplat_export_btn">Export Canvas</button>
-                    <button class="basic-button sharpsplat-repair-prompt-btn" id="sharpsplat_repair_prompt_btn" style="display:none">Generate Repair Prompt</button>
+                    <button class="btn btn-sm btn-primary" id="sharpsplat_export_btn" title="Preview a crop of the current rendered frame" data-bs-toggle="tooltip">Export Canvas</button>
+                    <button class="btn btn-sm btn-outline-secondary sharpsplat-repair-prompt-btn" id="sharpsplat_repair_prompt_btn" title="Copy a repair prompt containing the current camera movement" data-bs-toggle="tooltip" style="display:none">Generate Repair Prompt</button>
                     <!-- Shown only during export mode -->
                     <div id="sharpsplat_export_actions" style="display:none">
                         <div class="sharpsplat-settings-row">
-                            <label class="sharpsplat-settings-label" for="sharpsplat_export_resolution">Resolution</label>
-                            <select class="sharpsplat-settings-select" id="sharpsplat_export_resolution">
+                            <label class="sharpsplat-settings-label" for="sharpsplat_export_resolution" title="Choose the aspect ratio used to crop the rendered frame" data-bs-toggle="tooltip" data-bs-placement="right">Resolution</label>
+                            <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_export_resolution" title="Select the export crop ratio">
                                 <option value="none">None (Full)</option>
                                 <option value="1:1">1:1</option>
                                 <option value="4:3">4:3</option>
@@ -152,34 +148,34 @@
                         <div class="sharpsplat-export-custom" id="sharpsplat_export_custom_dims" style="display:none">
                             <div class="sharpsplat-camera-row">
                                 <label class="sharpsplat-camera-label">W</label>
-                                <input class="sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_w" min="1" step="1" value="1920">
+                                <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_w" min="1" step="1" value="1920" title="Custom aspect width">
                             </div>
                             <div class="sharpsplat-camera-row">
                                 <label class="sharpsplat-camera-label">H</label>
-                                <input class="sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_h" min="1" step="1" value="1080">
+                                <input class="form-control form-control-sm sharpsplat-camera-input" type="number" id="sharpsplat_export_custom_h" min="1" step="1" value="1080" title="Custom aspect height">
                             </div>
                         </div>
-                        <button class="basic-button" id="sharpsplat_export_save_btn">Save to Outputs</button>
-                        <button class="basic-button" id="sharpsplat_export_download_btn">Download</button>
-                        <button class="basic-button sharpsplat-export-cancel-btn" id="sharpsplat_export_cancel_btn">Cancel</button>
+                        <button class="btn btn-sm btn-primary" id="sharpsplat_export_save_btn" title="Save the cropped PNG under your SwarmUI outputs" data-bs-toggle="tooltip">Save to Outputs</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_export_download_btn" title="Download the cropped PNG through your browser" data-bs-toggle="tooltip">Download</button>
+                        <button class="btn btn-sm btn-outline-danger sharpsplat-export-cancel-btn" id="sharpsplat_export_cancel_btn" title="Close export mode without saving" data-bs-toggle="tooltip">Cancel</button>
                     </div>
                 </div>
             </div>
         </div>
         <!-- Splats accordion -->
         <div class="sharpsplat-accordion sharpsplat-accordion-flex" id="sharpsplat_acc_splats">
-            <div class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn" role="button" tabindex="0" aria-expanded="false" aria-controls="sharpsplat_acc_splats_body">
+            <div class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn" role="button" tabindex="0" aria-expanded="false" aria-controls="sharpsplat_acc_splats_body" title="Browse previously generated PLY and SPLAT files" data-bs-toggle="tooltip" data-bs-placement="right">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Splats
-                <button class="sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" type="button" title="Refresh list" aria-label="Refresh splat list">&#8635;</button>
+                <button class="btn btn-sm btn-outline-secondary sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" type="button" title="Refresh the generated splat list" data-bs-toggle="tooltip" aria-label="Refresh splat list">&#8635;</button>
             </div>
             <div class="sharpsplat-accordion-body sharpsplat-accordion-body-flex" id="sharpsplat_acc_splats_body">
-                <div class="sharpsplat-file-list" id="sharpsplat_file_list">
+                <div class="list-group list-group-flush sharpsplat-file-list" id="sharpsplat_file_list">
                     <span class="sharpsplat-hint">No splats generated yet.</span>
                 </div>
             </div>
         </div>
     </div>
-    <div class="sharpsplat-sidebar-resizer" id="sharpsplat_sidebar_resizer" role="separator" tabindex="0" aria-label="Resize viewer sidebar" aria-orientation="vertical"></div>
+    <div class="sharpsplat-sidebar-resizer" id="sharpsplat_sidebar_resizer" role="separator" tabindex="0" title="Drag to resize the sidebar; double-click to reset" data-bs-toggle="tooltip" data-bs-placement="right" aria-label="Resize viewer sidebar" aria-orientation="vertical"></div>
     <div class="sharpsplat-viewer-panel">
         <div class="sharpsplat-viewer-status" id="sharpsplat_status">
             Select a splat from the list, or click &ldquo;Generate 3D Splat&rdquo; on an image in the Generate tab.
