@@ -2,10 +2,10 @@
     <div class="sharpsplat-sidebar">
         <!-- Settings accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_settings">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_settings_btn">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_settings_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_settings_body">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Settings
             </button>
-            <div class="sharpsplat-accordion-body">
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_settings_body">
                 <div class="sharpsplat-settings-row">
                     <label class="sharpsplat-settings-label" for="sharpsplat_setting_auto_navigate">Open in viewer after generation</label>
                     <label class="sharpsplat-toggle">
@@ -47,10 +47,10 @@
         </div>
         <!-- Input accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_input">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_input_btn">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_input_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_input_body">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Input Image
             </button>
-            <div class="sharpsplat-accordion-body">
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_input_body">
                 <div class="sharpsplat-input-wrap">
                     <div class="sharpsplat-dropzone" id="sharpsplat_dropzone">
                         <div class="sharpsplat-dropzone-main" id="sharpsplat_dropzone_main">Drop a single image here</div>
@@ -71,10 +71,10 @@
         </div>
         <!-- Camera accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_camera">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_camera_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_camera_body">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Camera
             </button>
-            <div class="sharpsplat-accordion-body">
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_camera_body">
                 <div class="sharpsplat-camera-controls">
                     <div class="sharpsplat-camera-group">
                         <div class="sharpsplat-camera-group-label">Camera Position</div>
@@ -122,10 +122,10 @@
         </div>
         <!-- Export Canvas accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_export">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_export_body">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Export Canvas
             </button>
-            <div class="sharpsplat-accordion-body">
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_export_body">
                 <div class="sharpsplat-export-wrap">
                     <button class="basic-button" id="sharpsplat_export_btn">Export Canvas</button>
                     <button class="basic-button sharpsplat-repair-prompt-btn" id="sharpsplat_repair_prompt_btn" style="display:none">Generate Repair Prompt</button>
@@ -168,24 +168,24 @@
         </div>
         <!-- Splats accordion -->
         <div class="sharpsplat-accordion sharpsplat-accordion-flex" id="sharpsplat_acc_splats">
-            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn">
+            <div class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn" role="button" tabindex="0" aria-expanded="false" aria-controls="sharpsplat_acc_splats_body">
                 <span class="sharpsplat-accordion-arrow">&#9654;</span> Splats
-                <button class="sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" title="Refresh list">&#8635;</button>
-            </button>
-            <div class="sharpsplat-accordion-body sharpsplat-accordion-body-flex">
+                <button class="sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" type="button" title="Refresh list" aria-label="Refresh splat list">&#8635;</button>
+            </div>
+            <div class="sharpsplat-accordion-body sharpsplat-accordion-body-flex" id="sharpsplat_acc_splats_body">
                 <div class="sharpsplat-file-list" id="sharpsplat_file_list">
                     <span class="sharpsplat-hint">No splats generated yet.</span>
                 </div>
             </div>
         </div>
     </div>
+    <div class="sharpsplat-sidebar-resizer" id="sharpsplat_sidebar_resizer" role="separator" tabindex="0" aria-label="Resize viewer sidebar" aria-orientation="vertical"></div>
     <div class="sharpsplat-viewer-panel">
         <div class="sharpsplat-viewer-status" id="sharpsplat_status">
             Select a splat from the list, or click &ldquo;Generate 3D Splat&rdquo; on an image in the Generate tab.
         </div>
         <div class="sharpsplat-canvas-wrap" id="sharpsplat_canvas_wrap"></div>
-        <!-- Export crop indicator — shown over the canvas during export mode.
-             Kept outside canvas-wrap because wrap.innerHTML is cleared on each splat load. -->
+        <!-- Export crop indicator shown over the isolated viewer during export mode. -->
         <div class="sharpsplat-export-overlay" id="sharpsplat_export_overlay" style="display:none" aria-hidden="true">
             <div class="sharpsplat-export-viewport" id="sharpsplat_export_viewport">
                 <div class="sharpsplat-export-viewport-box" id="sharpsplat_export_viewport_box"></div>

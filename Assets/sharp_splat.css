@@ -1,25 +1,56 @@
 .sharpsplat-tab-root {
+    --sharpsplat-accent: #56a8d8;
+    --sharpsplat-panel: #181b1e;
+    --sharpsplat-panel-raised: #22262a;
+    --sharpsplat-border: #394047;
     display: flex;
     width: 100%;
     height: 100%;
     overflow: hidden;
+    background: #101214;
 }
 
 .sharpsplat-sidebar {
-    width: 240px;
+    width: 280px;
+    min-width: 210px;
+    max-width: min(46vw, 520px);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    border-right: 1px solid #444;
-    background: #1a1a1a;
+    background: var(--sharpsplat-panel);
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+.sharpsplat-sidebar-resizer {
+    position: relative;
+    width: 6px;
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: #15181a;
+    touch-action: none;
+    z-index: 5;
+}
+
+.sharpsplat-sidebar-resizer::after {
+    content: '';
+    position: absolute;
+    inset: 0 2px;
+    background: var(--sharpsplat-border);
+    transition: background 0.15s ease, inset 0.15s ease;
+}
+
+.sharpsplat-sidebar-resizer:hover::after,
+.sharpsplat-sidebar-resizer:focus-visible::after,
+.sharpsplat-sidebar-resizer.dragging::after {
+    inset: 0 1px;
+    background: var(--sharpsplat-accent);
 }
 
 /* Accordion */
 .sharpsplat-accordion {
     flex-shrink: 0;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--sharpsplat-border);
 }
 
 .sharpsplat-accordion-flex {
@@ -33,14 +64,15 @@
     display: flex;
     align-items: center;
     width: 100%;
-    padding: 7px 10px;
+    min-height: 38px;
+    padding: 8px 12px;
     background: none;
     border: none;
-    color: #aaa;
+    color: #b8c0c7;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0;
     cursor: pointer;
     text-align: left;
     gap: 6px;
@@ -48,14 +80,19 @@
 }
 
 .sharpsplat-accordion-header:hover {
-    color: #ddd;
-    background: #222;
+    color: #f1f5f7;
+    background: var(--sharpsplat-panel-raised);
+}
+
+.sharpsplat-accordion-header:focus-visible {
+    outline: 2px solid var(--sharpsplat-accent);
+    outline-offset: -2px;
 }
 
 .sharpsplat-accordion-arrow {
     font-size: 9px;
     display: inline-block;
-    transition: transform 0.15s;
+    transition: transform 0.2s ease;
     flex-shrink: 0;
 }
 
@@ -64,7 +101,6 @@
 }
 
 .sharpsplat-accordion-body {
-    display: none;
     overflow: hidden;
 }
 
@@ -77,10 +113,6 @@
 .sharpsplat-accordion-body-flex .sharpsplat-file-list {
     flex: 1;
     min-height: 0;
-}
-
-.sharpsplat-accordion.open > .sharpsplat-accordion-body {
-    display: block;
 }
 
 .sharpsplat-accordion-flex.open > .sharpsplat-accordion-body {
@@ -263,11 +295,12 @@
 }
 
 .sharpsplat-viewer-status {
-    padding: 6px 12px;
+    min-height: 38px;
+    padding: 9px 14px;
     font-size: 13px;
     color: #aaa;
-    background: #1a1a1a;
-    border-bottom: 1px solid #444;
+    background: var(--sharpsplat-panel);
+    border-bottom: 1px solid var(--sharpsplat-border);
     flex-shrink: 0;
 }
 
@@ -283,6 +316,14 @@
     display: block;
     width: 100%;
     height: 100%;
+}
+
+.sharpsplat-viewer-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: #101214;
 }
 
 /* Settings panel */
@@ -663,4 +704,46 @@
 
 .sharpsplat-toast.visible {
     opacity: 1;
+}
+
+@media (max-width: 720px) {
+    .sharpsplat-tab-root {
+        flex-direction: column;
+    }
+
+    .sharpsplat-sidebar {
+        width: 100% !important;
+        min-width: 0;
+        max-width: none;
+        height: 42%;
+        min-height: 180px;
+        max-height: 70%;
+    }
+
+    .sharpsplat-sidebar-resizer {
+        width: 100%;
+        height: 6px;
+        flex-basis: 6px;
+        cursor: row-resize;
+    }
+
+    .sharpsplat-sidebar-resizer::after {
+        inset: 2px 0;
+    }
+
+    .sharpsplat-sidebar-resizer:hover::after,
+    .sharpsplat-sidebar-resizer:focus-visible::after,
+    .sharpsplat-sidebar-resizer.dragging::after {
+        inset: 1px 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sharpsplat-accordion-arrow,
+    .sharpsplat-sidebar-resizer::after,
+    .sharpsplat-toggle-slider,
+    .sharpsplat-toggle-slider::before,
+    .sharpsplat-toast {
+        transition: none;
+    }
 }

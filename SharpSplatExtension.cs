@@ -28,9 +28,10 @@ public class SharpSplatExtension : Extension
         ExtFolder = FilePath;
         ScriptFiles.Add("Assets/sharp_splat.js");
         StyleSheetFiles.Add("Assets/sharp_splat.css");
-        // The built viewer bundle is served on demand via the extension file route.
+        // The isolated viewer frame and built bundle are served on demand via the extension file route.
         // Build it by running `npm install` in the extension folder.
-        OtherAssets.Add("Assets/splat-viewer.bundle.js");
+        OtherAssets.Add("Assets/splat-viewer-frame.html");
+        OtherAssets.Add("Assets/splat-viewer-frame.bundle.js");
         // Register the ComfyNodes folder so ComfyUI picks up the SharpSplatGenerate node.
         ComfyUISelfStartBackend.CustomNodePaths.Add(Path.GetFullPath($"{FilePath}/ComfyNodes"));
 
@@ -59,10 +60,10 @@ public class SharpSplatExtension : Extension
     {
         Logs.Info("SharpSplat extension initialized.");
         SharpSplatAPI.Register();
-        string bundlePath = Path.Combine(ExtFolder, "Assets", "splat-viewer.bundle.js");
+        string bundlePath = Path.Combine(ExtFolder, "Assets", "splat-viewer-frame.bundle.js");
         if (!File.Exists(bundlePath))
         {
-            Logs.Warning("SharpSplat: splat-viewer.bundle.js not found. Run 'npm install' in the extension folder to build the viewer bundle.");
+            Logs.Warning("SharpSplat: splat-viewer-frame.bundle.js not found. Run 'npm install' in the extension folder to build the viewer bundle.");
         }
         // Inject a SharpSplatGenerate node into any workflow where <sharpsplat> was used.
         // Running inside the same ComfyUI job guarantees gen->splat ordering with no extra
