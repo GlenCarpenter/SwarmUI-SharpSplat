@@ -1,3 +1,4 @@
+using System.IO;
 using Newtonsoft.Json.Linq;
 
 namespace GlenCarpenter.Extensions.SharpSplat;
