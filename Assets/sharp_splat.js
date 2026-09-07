@@ -109,14 +109,15 @@ class SharpSplatTabManager {
             });
         }
         // Accordion toggles — restore open state from localStorage.
-        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings', 'sharpsplat_acc_export']) {
+        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_lighting', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings', 'sharpsplat_acc_export']) {
             let acc = document.getElementById(id);
             if (!acc) {
                 continue;
             }
             let stored = localStorage.getItem(id);
-            // Camera and Splats open by default; Settings and Export Canvas closed by default.
-            let isOpen = stored !== null ? stored === 'true' : (id !== 'sharpsplat_acc_settings' && id !== 'sharpsplat_acc_export');
+            // Compact configuration panels are closed by default.
+            let closedByDefault = ['sharpsplat_acc_settings', 'sharpsplat_acc_lighting', 'sharpsplat_acc_export'];
+            let isOpen = stored !== null ? stored === 'true' : !closedByDefault.includes(id);
             this._setAccordionState(acc, isOpen, false);
             let btn = acc.querySelector('.sharpsplat-accordion-header');
             if (btn) {
@@ -135,6 +136,7 @@ class SharpSplatTabManager {
         this._setupSidebarResize();
         this._setupTooltips();
         this._setupExportCanvas();
+        this._setupLightingControls();
         // Restore and persist the auto-navigate toggle.
         let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
         if (autoNavToggle) {
@@ -210,6 +212,85 @@ class SharpSplatTabManager {
         }
         let tabPane = document.getElementById('splatviewer');
         this._tabActive = !!(tabPane && (tabPane.classList.contains('active') || tabPane.classList.contains('show')));
+    }
+
+    /** Restores, persists, and applies the mesh lighting controls. */
+    _setupLightingControls() {
+        let controls = [
+            { id: 'sharpsplat_light_exposure', key: 'exposure', defaultValue: 1, digits: 2, suffix: '' },
+            { id: 'sharpsplat_light_fill', key: 'fill', defaultValue: 2, digits: 1, suffix: '' },
+            { id: 'sharpsplat_light_key', key: 'key', defaultValue: 3, digits: 1, suffix: '' },
+            { id: 'sharpsplat_light_azimuth', key: 'azimuth', defaultValue: 40, digits: 0, suffix: '\u00b0' },
+            { id: 'sharpsplat_light_elevation', key: 'elevation', defaultValue: 45, digits: 0, suffix: '\u00b0' }
+        ];
+        let setControlValue = (control, value) => {
+            let input = document.getElementById(control.id);
+            if (!input) {
+                return;
+            }
+            let boundedValue = Math.min(parseFloat(input.max), Math.max(parseFloat(input.min), value));
+            input.value = boundedValue.toString();
+            let output = input.parentElement.querySelector('output');
+            if (output) {
+                output.textContent = boundedValue.toFixed(control.digits) + control.suffix;
+            }
+        };
+        let apply = () => {
+            for (let control of controls) {
+                let input = document.getElementById(control.id);
+                if (input) {
+                    localStorage.setItem('sharpsplat_light_' + control.key, input.value);
+                }
+            }
+            if (this._currentAssetType === 'mesh') {
+                this._sendFrameCommand('setLighting', this._getLightingSettings());
+            }
+        };
+        for (let control of controls) {
+            let storedValue = parseFloat(localStorage.getItem('sharpsplat_light_' + control.key));
+            setControlValue(control, Number.isFinite(storedValue) ? storedValue : control.defaultValue);
+            let input = document.getElementById(control.id);
+            if (input) {
+                input.addEventListener('input', () => {
+                    setControlValue(control, parseFloat(input.value));
+                    apply();
+                });
+            }
+        }
+        let resetButton = document.getElementById('sharpsplat_light_reset');
+        if (resetButton) {
+            resetButton.onclick = () => {
+                for (let control of controls) {
+                    setControlValue(control, control.defaultValue);
+                }
+                apply();
+            };
+        }
+        this._syncLightingVisibility();
+    }
+
+    /** Returns the current mesh lighting values from the sidebar. */
+    _getLightingSettings() {
+        let readValue = (id, fallback) => {
+            let input = document.getElementById(id);
+            let value = input ? parseFloat(input.value) : fallback;
+            return Number.isFinite(value) ? value : fallback;
+        };
+        return {
+            exposure: readValue('sharpsplat_light_exposure', 1),
+            fillIntensity: readValue('sharpsplat_light_fill', 2),
+            keyIntensity: readValue('sharpsplat_light_key', 3),
+            keyAzimuth: readValue('sharpsplat_light_azimuth', 40),
+            keyElevation: readValue('sharpsplat_light_elevation', 45)
+        };
+    }
+
+    /** Shows lighting controls only when a GLB mesh is selected. */
+    _syncLightingVisibility() {
+        let accordion = document.getElementById('sharpsplat_acc_lighting');
+        if (accordion) {
+            accordion.style.display = this._currentAssetType === 'mesh' ? '' : 'none';
+        }
     }
 
     /** Initializes Bootstrap tooltips for static SharpSplat controls when Bootstrap is available. */
@@ -467,7 +548,8 @@ class SharpSplatTabManager {
         this._sendFrameCommand('load', {
             url: this._currentUrl,
             assetType: this._currentAssetType,
-            invertControls: !!(invertToggle && invertToggle.checked)
+            invertControls: !!(invertToggle && invertToggle.checked),
+            lighting: this._getLightingSettings()
         });
     }
 
@@ -1344,6 +1426,7 @@ class SharpSplatTabManager {
                 this._currentUrl = null;
                 this._currentFilename = null;
                 this._currentAssetType = null;
+                this._syncLightingVisibility();
                 this._disposeViewer();
                 let status = document.getElementById('sharpsplat_status');
                 if (status) {
@@ -1374,6 +1457,7 @@ class SharpSplatTabManager {
         this._currentUrl = url;
         this._currentFilename = filename;
         this._currentAssetType = assetType || (/\.glb$/i.test(filename) ? 'mesh' : 'splat');
+        this._syncLightingVisibility();
         for (let row of document.querySelectorAll('.sharpsplat-file-row')) {
             let nameBtn = row.querySelector('.sharpsplat-file-entry');
             row.classList.toggle('active', nameBtn && nameBtn.dataset.url === url);

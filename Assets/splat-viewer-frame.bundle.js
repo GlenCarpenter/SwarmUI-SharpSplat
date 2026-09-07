@@ -58538,6 +58538,7 @@ function addPrimitiveAttributes( geometry, primitiveDef, parser ) {
 }
 
 let viewer = null;
+let viewerType = null;
 let initialCameraState = null;
 let loadGeneration = 0;
 let cameraSyncGeneration = 0;
@@ -58577,6 +58578,7 @@ function disposeViewer() {
         viewer.dispose();
         viewer = null;
     }
+    viewerType = null;
     let root = document.getElementById('viewer-root');
     root.innerHTML = '';
 }
@@ -58627,6 +58629,7 @@ async function loadSplat(payload) {
     disposeViewer();
     let generation = loadGeneration;
     let root = document.getElementById('viewer-root');
+    viewerType = 'splat';
     viewer = new Viewer({
         rootElement: root,
         cameraUp: [0, -1, 0],
@@ -58695,6 +58698,33 @@ function disposeMeshViewer(meshViewer) {
     meshViewer.renderer.forceContextLoss();
 }
 
+/** Returns a finite number constrained to the supported lighting range. */
+function boundedLightingValue(value, fallback, min, max) {
+    let number = Number(value);
+    return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+/** Applies presentation-only lighting settings to a Three.js mesh viewer. */
+function applyMeshLighting(meshViewer, lighting = {}) {
+    let exposure = boundedLightingValue(lighting.exposure, 1, 0.1, 3);
+    let fillIntensity = boundedLightingValue(lighting.fillIntensity, 2, 0, 5);
+    let keyIntensity = boundedLightingValue(lighting.keyIntensity, 3, 0, 8);
+    let azimuth = MathUtils.degToRad(boundedLightingValue(lighting.keyAzimuth, 40, -180, 180));
+    let elevation = MathUtils.degToRad(boundedLightingValue(lighting.keyElevation, 45, -90, 90));
+    let horizontalScale = Math.cos(elevation);
+    let lightDirection = new Vector3(
+        horizontalScale * Math.sin(azimuth),
+        Math.sin(elevation),
+        horizontalScale * Math.cos(azimuth)
+    );
+    meshViewer.renderer.toneMappingExposure = exposure;
+    meshViewer.fillLight.intensity = fillIntensity;
+    meshViewer.keyLight.intensity = keyIntensity;
+    meshViewer.keyLight.target.position.copy(meshViewer.lightTarget);
+    meshViewer.keyLight.position.copy(meshViewer.lightTarget).addScaledVector(lightDirection, 10);
+    meshViewer.keyLight.target.updateMatrixWorld();
+}
+
 /** Creates a Three.js viewer and loads one GLB URL. */
 async function loadMesh(payload) {
     disposeViewer();
@@ -58713,10 +58743,13 @@ async function loadMesh(payload) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.rotateSpeed = payload.invertControls ? -0.5 : 0.5;
-    scene.add(new HemisphereLight(0xffffff, 0x303840, 2));
+    let fillLight = new HemisphereLight(0xffffff, 0x303840, 2);
+    scene.add(fillLight);
     let keyLight = new DirectionalLight(0xffffff, 3);
-    keyLight.position.set(4, 6, 5);
+    let keyTarget = new Object3D();
+    keyLight.target = keyTarget;
     scene.add(keyLight);
+    scene.add(keyTarget);
 
     let resize = () => {
         let width = root.clientWidth || 800;
@@ -58737,11 +58770,16 @@ async function loadMesh(payload) {
         model: null,
         animationFrame: 0,
         resizeObserver: resizeObserver,
+        fillLight: fillLight,
+        keyLight: keyLight,
+        lightTarget: new Vector3(),
         dispose() {
             disposeMeshViewer(this);
         }
     };
     viewer = meshViewer;
+    viewerType = 'mesh';
+    applyMeshLighting(meshViewer, payload.lighting);
 
     try {
         let gltf = await new GLTFLoader().loadAsync(payload.url);
@@ -58757,6 +58795,8 @@ async function loadMesh(payload) {
         }
         let center = bounds.getCenter(new Vector3());
         let size = bounds.getSize(new Vector3());
+        meshViewer.lightTarget.copy(center);
+        applyMeshLighting(meshViewer, payload.lighting);
         let maxSize = Math.max(size.x, size.y, size.z);
         let distance = Math.max(maxSize / (2 * Math.tan(MathUtils.degToRad(camera.fov * 0.5))) * 1.35, 0.1);
         camera.near = Math.max(distance / 1000, 0.001);
@@ -58845,6 +58885,9 @@ window.addEventListener('message', (event) => {
     }
     else if (message.type === 'setInvertControls' && viewer && viewer.controls) {
         viewer.controls.rotateSpeed = payload.enabled ? -0.5 : 0.5;
+    }
+    else if (message.type === 'setLighting' && viewerType === 'mesh' && viewer) {
+        applyMeshLighting(viewer, payload);
     }
     else if (message.type === 'capture') {
         captureCanvas(message.requestId);

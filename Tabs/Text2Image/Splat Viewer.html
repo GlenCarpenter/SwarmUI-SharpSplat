@@ -118,6 +118,42 @@
                 </div>
             </div>
         </div>
+        <!-- Mesh lighting accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_lighting" style="display:none">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_lighting_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_lighting_body" title="Adjust lighting for the selected GLB mesh" data-bs-toggle="tooltip" data-bs-placement="right">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Lighting
+            </button>
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_lighting_body">
+                <div class="sharpsplat-lighting-controls">
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_exposure">
+                        <span>Exposure</span>
+                        <input type="range" id="sharpsplat_light_exposure" min="0.1" max="3" step="0.05" value="1">
+                        <output for="sharpsplat_light_exposure">1.00</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_fill">
+                        <span>Fill</span>
+                        <input type="range" id="sharpsplat_light_fill" min="0" max="5" step="0.1" value="2">
+                        <output for="sharpsplat_light_fill">2.0</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_key">
+                        <span>Key</span>
+                        <input type="range" id="sharpsplat_light_key" min="0" max="8" step="0.1" value="3">
+                        <output for="sharpsplat_light_key">3.0</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_azimuth">
+                        <span>Azimuth</span>
+                        <input type="range" id="sharpsplat_light_azimuth" min="-180" max="180" step="1" value="40">
+                        <output for="sharpsplat_light_azimuth">40&deg;</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_elevation">
+                        <span>Elevation</span>
+                        <input type="range" id="sharpsplat_light_elevation" min="-90" max="90" step="1" value="45">
+                        <output for="sharpsplat_light_elevation">45&deg;</output>
+                    </label>
+                    <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_light_reset" type="button" title="Restore the default mesh lighting" data-bs-toggle="tooltip">Reset Lighting</button>
+                </div>
+            </div>
+        </div>
         <!-- Export Canvas accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_export">
             <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_export_body" title="Capture the current viewer angle as a PNG image" data-bs-toggle="tooltip" data-bs-placement="right">
