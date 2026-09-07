@@ -1,0 +1,223 @@
+{
+  "1": { "class_type": "SwarmLoadImageB64", "inputs": { "image_base64": "" } },
+  "2": { "class_type": "LoadBackgroundRemovalModel", "inputs": { "bg_removal_name": "birefnet.safetensors" } },
+  "3": {
+    "class_type": "RemoveBackground",
+    "inputs": { "bg_removal_model": ["2", 0], "image": ["1", 0] }
+  },
+  "4": {
+    "class_type": "ImageCropToMask",
+    "inputs": {
+      "images": ["1", 0],
+      "masks": ["3", 0],
+      "width": 1024,
+      "height": 1024,
+      "pad_factor": 1.1,
+      "grow_mask": 0,
+      "background": "#000000"
+    }
+  },
+  "5": { "class_type": "CLIPVisionLoader", "inputs": { "clip_name": "dino_v3_L_naf_fp32.safetensors" } },
+  "6": {
+    "class_type": "UNETLoader",
+    "inputs": { "unet_name": "pixal3d_int8_convrot.safetensors", "weight_dtype": "default" }
+  },
+  "7": {
+    "class_type": "Pixal3DConditioning",
+    "inputs": { "clip_vision_model": ["5", 0], "image": ["4", 0], "camera_angle_x": ["40", 0] }
+  },
+  "8": {
+    "class_type": "CFGOverride",
+    "inputs": { "model": ["6", 0], "cfg": 1.0, "start_percent": 0.667, "end_percent": 1.0 }
+  },
+  "9": { "class_type": "RescaleCFG", "inputs": { "model": ["8", 0], "multiplier": 0.7 } },
+  "10": { "class_type": "ModelSamplingSD3", "inputs": { "model": ["9", 0], "shift": 5.0 } },
+  "11": { "class_type": "EmptyTrellis2LatentStructure", "inputs": { "batch_size": 1 } },
+  "12": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["10", 0],
+      "positive": ["7", 0],
+      "negative": ["7", 1],
+      "latent_image": ["11", 0],
+      "seed": 0,
+      "steps": 12,
+      "cfg": 7.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "13": { "class_type": "VAELoader", "inputs": { "vae_name": "trellis_2_shape_vae_bf16.safetensors" } },
+  "14": {
+    "class_type": "VaeDecodeStructureTrellis2",
+    "inputs": { "samples": ["12", 0], "vae": ["13", 0], "resolution": "32" }
+  },
+  "15": {
+    "class_type": "Trellis2ShapeStage",
+    "inputs": { "positive": ["7", 0], "negative": ["7", 1], "voxel": ["14", 0] }
+  },
+  "16": {
+    "class_type": "CFGOverride",
+    "inputs": { "model": ["6", 0], "cfg": 1.0, "start_percent": 0.769, "end_percent": 1.0 }
+  },
+  "17": { "class_type": "RescaleCFG", "inputs": { "model": ["16", 0], "multiplier": 0.5 } },
+  "18": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["17", 0],
+      "positive": ["15", 0],
+      "negative": ["15", 1],
+      "latent_image": ["15", 2],
+      "seed": 0,
+      "steps": 20,
+      "cfg": 7.5,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "19": {
+    "class_type": "Trellis2UpsampleStage",
+    "inputs": {
+      "positive": ["15", 0],
+      "negative": ["15", 1],
+      "shape_latent": ["18", 0],
+      "vae": ["13", 0],
+      "target_resolution": 1536
+    }
+  },
+  "20": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["17", 0],
+      "positive": ["19", 0],
+      "negative": ["19", 1],
+      "latent_image": ["19", 2],
+      "seed": 0,
+      "steps": 12,
+      "cfg": 7.5,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "21": {
+    "class_type": "Trellis2TextureStage",
+    "inputs": { "positive": ["19", 0], "negative": ["19", 1], "shape_latent": ["20", 0] }
+  },
+  "22": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["6", 0],
+      "positive": ["21", 0],
+      "negative": ["21", 1],
+      "latent_image": ["21", 2],
+      "seed": 1,
+      "steps": 12,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "denoise": 1.0
+    }
+  },
+  "23": { "class_type": "VAELoader", "inputs": { "vae_name": "trellis_2_texture_vae_bf16.safetensors" } },
+  "24": {
+    "class_type": "VaeDecodeShapeTrellis",
+    "inputs": { "samples": ["20", 0], "vae": ["13", 0] }
+  },
+  "25": {
+    "class_type": "VaeDecodeTextureTrellis",
+    "inputs": { "samples": ["22", 0], "vae": ["23", 0], "shape_subdivides": ["24", 1] }
+  },
+  "27": {
+    "class_type": "RemeshMesh",
+    "inputs": {
+      "mesh": ["24", 0],
+      "resolution": 768,
+      "sign_mode": "udf",
+      "sign_mode.qef": false,
+      "sign_mode.drop_inverted_components": false,
+      "sign_mode.drop_enclosed_components": false,
+      "band": 1.0,
+      "project_back": 0.0,
+      "fix_poles": false,
+      "smooth_iters": 20,
+      "drop_small_components": 0.01,
+      "precluster_max_verts": 20000000
+    }
+  },
+  "28": {
+    "class_type": "DecimateMesh",
+    "inputs": {
+      "mesh": ["27", 0],
+      "target_face_count": 700000,
+      "placement_mode": "midpoint"
+    }
+  },
+  "29": { "class_type": "MeshSmoothNormals", "inputs": { "mesh": ["28", 0], "crease_angle": 180.0 } },
+  "30": {
+    "class_type": "UnwrapMesh",
+    "inputs": { "mesh": ["29", 0], "segmenter": "pec", "resolution": 4096, "padding": 1, "weld_distance": 0.0002 }
+  },
+  "31": {
+    "class_type": "BakeTextureFromVoxel",
+    "inputs": { "mesh": ["30", 0], "voxel_colors": ["25", 0], "reference_mesh": ["24", 0], "texture_size": 4096 }
+  },
+  "32": {
+    "class_type": "BakeNormalMapFromMesh",
+    "inputs": { "low_poly": ["30", 0], "high_poly": ["27", 0], "resolution": 2048, "cage_distance": 0.05, "ignore_backfaces": true }
+  },
+  "33": {
+    "class_type": "BakeAmbientOcclusion",
+    "inputs": {
+      "low_poly": ["30", 0],
+      "high_poly": ["27", 0],
+      "resolution": 1024,
+      "samples": 64,
+      "max_distance": 0.71,
+      "strength": 1.0,
+      "bias": 0.01
+    }
+  },
+  "34": {
+    "class_type": "ApplyTextureToMesh",
+    "inputs": {
+      "mesh": ["30", 0],
+      "base_color": ["31", 0],
+      "metallic": ["31", 1],
+      "roughness": ["31", 2],
+      "occlusion": ["33", 0],
+      "normal_map": ["32", 0]
+    }
+  },
+  "35": { "class_type": "MeshSmoothNormals", "inputs": { "mesh": ["34", 0], "crease_angle": 180.0 } },
+  "36": { "class_type": "MeshToFile3D", "inputs": { "mesh": ["35", 0] } },
+  "37": {
+    "class_type": "Save3DAdvanced",
+    "inputs": {
+      "model_3d": ["36", 0],
+      "filename_prefix": "sharpsplat3d/output",
+      "viewport_state": {},
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "38": { "class_type": "LoadMoGeModel", "inputs": { "model_name": "moge_2_vitl_normal_fp16.safetensors" } },
+  "39": {
+    "class_type": "MoGeInference",
+    "inputs": {
+      "moge_model": ["38", 0],
+      "image": ["4", 0],
+      "resolution_level": 9,
+      "fov_x_degrees": 0.0,
+      "batch_size": 4,
+      "force_projection": true,
+      "apply_mask": true
+    }
+  },
+  "40": {
+    "class_type": "MoGeGeometryToFOV",
+    "inputs": { "moge_geometry": ["39", 0], "axis": "horizontal", "unit": "degrees" }
+  }
+}

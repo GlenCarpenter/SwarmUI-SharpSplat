@@ -39,7 +39,7 @@ async function sharpSplatGetImageBase64(src) {
 }
 
 /**
- * Manages the Splat Viewer tab — file list sidebar and persistent WebGL viewer.
+ * Manages the Splat Viewer tab, file list sidebar, and isolated 3D viewer.
  */
 class SharpSplatTabManager {
     constructor() {
@@ -47,7 +47,7 @@ class SharpSplatTabManager {
         this._viewerFrame = null;
         /** @type {boolean} Whether the active viewer frame has initialized. */
         this._viewerFrameReady = false;
-        /** @type {boolean} Whether the frame has an active splat. */
+        /** @type {boolean} Whether the frame has an active 3D asset. */
         this._viewerLoaded = false;
         /** @type {Object|null} Latest serializable camera/canvas state from the frame. */
         this._cameraState = null;
@@ -55,10 +55,12 @@ class SharpSplatTabManager {
         this._frameRequestId = 0;
         /** @type {Map<number, {resolve: Function, reject: Function, timeout: number}>} Pending frame requests. */
         this._frameRequests = new Map();
-        /** @type {string|null} URL of the currently loaded splat. */
+        /** @type {string|null} URL of the currently loaded 3D asset. */
         this._currentUrl = null;
-        /** @type {string|null} Display name of the currently selected splat. */
+        /** @type {string|null} Display name of the currently selected 3D asset. */
         this._currentFilename = null;
+        /** @type {'splat'|'mesh'|null} Renderer type for the selected 3D asset. */
+        this._currentAssetType = null;
         /** @type {boolean} Whether the Splat Viewer tab is currently visible. */
         this._tabActive = false;
         /** @type {boolean} Whether DOM event handlers have been wired up. */
@@ -107,14 +109,15 @@ class SharpSplatTabManager {
             });
         }
         // Accordion toggles — restore open state from localStorage.
-        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings', 'sharpsplat_acc_export']) {
+        for (let id of ['sharpsplat_acc_input', 'sharpsplat_acc_camera', 'sharpsplat_acc_lighting', 'sharpsplat_acc_splats', 'sharpsplat_acc_settings', 'sharpsplat_acc_export']) {
             let acc = document.getElementById(id);
             if (!acc) {
                 continue;
             }
             let stored = localStorage.getItem(id);
-            // Camera and Splats open by default; Settings and Export Canvas closed by default.
-            let isOpen = stored !== null ? stored === 'true' : (id !== 'sharpsplat_acc_settings' && id !== 'sharpsplat_acc_export');
+            // Compact configuration panels are closed by default.
+            let closedByDefault = ['sharpsplat_acc_settings', 'sharpsplat_acc_lighting', 'sharpsplat_acc_export'];
+            let isOpen = stored !== null ? stored === 'true' : !closedByDefault.includes(id);
             this._setAccordionState(acc, isOpen, false);
             let btn = acc.querySelector('.sharpsplat-accordion-header');
             if (btn) {
@@ -133,6 +136,7 @@ class SharpSplatTabManager {
         this._setupSidebarResize();
         this._setupTooltips();
         this._setupExportCanvas();
+        this._setupLightingControls();
         // Restore and persist the auto-navigate toggle.
         let autoNavToggle = document.getElementById('sharpsplat_setting_auto_navigate');
         if (autoNavToggle) {
@@ -208,6 +212,85 @@ class SharpSplatTabManager {
         }
         let tabPane = document.getElementById('splatviewer');
         this._tabActive = !!(tabPane && (tabPane.classList.contains('active') || tabPane.classList.contains('show')));
+    }
+
+    /** Restores, persists, and applies the mesh lighting controls. */
+    _setupLightingControls() {
+        let controls = [
+            { id: 'sharpsplat_light_exposure', key: 'exposure', defaultValue: 1, digits: 2, suffix: '' },
+            { id: 'sharpsplat_light_fill', key: 'fill', defaultValue: 2, digits: 1, suffix: '' },
+            { id: 'sharpsplat_light_key', key: 'key', defaultValue: 3, digits: 1, suffix: '' },
+            { id: 'sharpsplat_light_azimuth', key: 'azimuth', defaultValue: 40, digits: 0, suffix: '\u00b0' },
+            { id: 'sharpsplat_light_elevation', key: 'elevation', defaultValue: 45, digits: 0, suffix: '\u00b0' }
+        ];
+        let setControlValue = (control, value) => {
+            let input = document.getElementById(control.id);
+            if (!input) {
+                return;
+            }
+            let boundedValue = Math.min(parseFloat(input.max), Math.max(parseFloat(input.min), value));
+            input.value = boundedValue.toString();
+            let output = input.parentElement.querySelector('output');
+            if (output) {
+                output.textContent = boundedValue.toFixed(control.digits) + control.suffix;
+            }
+        };
+        let apply = () => {
+            for (let control of controls) {
+                let input = document.getElementById(control.id);
+                if (input) {
+                    localStorage.setItem('sharpsplat_light_' + control.key, input.value);
+                }
+            }
+            if (this._currentAssetType === 'mesh') {
+                this._sendFrameCommand('setLighting', this._getLightingSettings());
+            }
+        };
+        for (let control of controls) {
+            let storedValue = parseFloat(localStorage.getItem('sharpsplat_light_' + control.key));
+            setControlValue(control, Number.isFinite(storedValue) ? storedValue : control.defaultValue);
+            let input = document.getElementById(control.id);
+            if (input) {
+                input.addEventListener('input', () => {
+                    setControlValue(control, parseFloat(input.value));
+                    apply();
+                });
+            }
+        }
+        let resetButton = document.getElementById('sharpsplat_light_reset');
+        if (resetButton) {
+            resetButton.onclick = () => {
+                for (let control of controls) {
+                    setControlValue(control, control.defaultValue);
+                }
+                apply();
+            };
+        }
+        this._syncLightingVisibility();
+    }
+
+    /** Returns the current mesh lighting values from the sidebar. */
+    _getLightingSettings() {
+        let readValue = (id, fallback) => {
+            let input = document.getElementById(id);
+            let value = input ? parseFloat(input.value) : fallback;
+            return Number.isFinite(value) ? value : fallback;
+        };
+        return {
+            exposure: readValue('sharpsplat_light_exposure', 1),
+            fillIntensity: readValue('sharpsplat_light_fill', 2),
+            keyIntensity: readValue('sharpsplat_light_key', 3),
+            keyAzimuth: readValue('sharpsplat_light_azimuth', 40),
+            keyElevation: readValue('sharpsplat_light_elevation', 45)
+        };
+    }
+
+    /** Shows lighting controls only when a GLB mesh is selected. */
+    _syncLightingVisibility() {
+        let accordion = document.getElementById('sharpsplat_acc_lighting');
+        if (accordion) {
+            accordion.style.display = this._currentAssetType === 'mesh' ? '' : 'none';
+        }
     }
 
     /** Initializes Bootstrap tooltips for static SharpSplat controls when Bootstrap is available. */
@@ -363,7 +446,7 @@ class SharpSplatTabManager {
         }
     }
 
-    /** Creates the sandboxed iframe that owns all GaussianSplats3D execution. */
+    /** Creates the sandboxed iframe that owns all 3D rendering execution. */
     _mountViewerFrame() {
         if (!this._tabActive || this._viewerFrame) {
             return;
@@ -374,7 +457,7 @@ class SharpSplatTabManager {
         }
         let frame = document.createElement('iframe');
         frame.className = 'sharpsplat-viewer-frame';
-        frame.title = 'Gaussian splat viewer';
+        frame.title = '3D asset viewer';
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.src = sharpSplatFrameUrl;
         this._viewerFrame = frame;
@@ -440,7 +523,7 @@ class SharpSplatTabManager {
             this._viewerLoaded = false;
             let status = document.getElementById('sharpsplat_status');
             if (status) {
-                status.textContent = 'Error loading ' + (this._currentFilename || 'splat') + ': ' + payload.message;
+                status.textContent = 'Error loading ' + (this._currentFilename || '3D asset') + ': ' + payload.message;
             }
         }
         else if (message.type === 'response' && message.requestId !== null) {
@@ -453,7 +536,7 @@ class SharpSplatTabManager {
         }
     }
 
-    /** Sends the selected splat and current control settings into the ready frame. */
+    /** Sends the selected 3D asset and current control settings into the ready frame. */
     _loadCurrentSplatInFrame() {
         if (!this._currentUrl) {
             return;
@@ -462,11 +545,16 @@ class SharpSplatTabManager {
         this._viewerLoaded = false;
         this._cameraState = null;
         this._initialCameraState = null;
-        this._sendFrameCommand('load', { url: this._currentUrl, invertControls: !!(invertToggle && invertToggle.checked) });
+        this._sendFrameCommand('load', {
+            url: this._currentUrl,
+            assetType: this._currentAssetType,
+            invertControls: !!(invertToggle && invertToggle.checked),
+            lighting: this._getLightingSettings()
+        });
     }
 
     /**
-     * Returns the currently selected model ('mlsharp', 'vggt', or 'instantsplat').
+    * Returns the currently selected reconstruction model.
      */
     _getModel() {
         let sel = document.getElementById('sharpsplat_setting_model');
@@ -491,6 +579,14 @@ class SharpSplatTabManager {
     _isMultiViewModel() {
         let model = this._getModel();
         return model === 'vggt' || model === 'instantsplat';
+    }
+
+    /**
+     * Returns true when the selected model produces a textured GLB mesh.
+     */
+    _isMeshModel() {
+        let model = this._getModel();
+        return model === 'pixal3d' || model === 'trellis2';
     }
 
     /**
@@ -519,6 +615,14 @@ class SharpSplatTabManager {
         let padRow = document.getElementById('sharpsplat_row_pad_to_square');
         if (padRow) {
             padRow.style.display = isMultiView ? '' : 'none';
+        }
+        let outputFormatRow = document.getElementById('sharpsplat_row_output_format');
+        if (outputFormatRow) {
+            outputFormatRow.style.display = this._isMeshModel() ? 'none' : '';
+        }
+        let generateBtn = document.getElementById('sharpsplat_generate_btn');
+        if (generateBtn) {
+            generateBtn.textContent = this._isMeshModel() ? 'Generate 3D Model' : 'Generate Splat';
         }
     }
 
@@ -986,6 +1090,13 @@ class SharpSplatTabManager {
                 let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
                 await sharpSplatGenerateTripoSplat(this._inputImageBase64, filenamePrefix);
             }
+            else if (this._isMeshModel()) {
+                if (!this._inputImageBase64) {
+                    return;
+                }
+                let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
+                await sharpSplatGenerateNative3D(this._inputImageBase64, filenamePrefix, this._getModel());
+            }
             else {
                 if (!this._inputImageBase64) {
                     return;
@@ -1248,19 +1359,19 @@ class SharpSplatTabManager {
             });
             let splats = result.splats || [];
             if (splats.length === 0) {
-                listDiv.innerHTML = '<span class="sharpsplat-hint">No splats generated yet.</span>';
+                listDiv.innerHTML = '<span class="sharpsplat-hint">No 3D assets generated yet.</span>';
                 return;
             }
             listDiv.innerHTML = '';
             for (let splat of splats) {
                 let row = createDiv(null, 'list-group-item d-flex align-items-center p-0 sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
-                // Name button — loads the splat into the viewer.
+                // Name button loads the asset into the appropriate iframe renderer.
                 let nameBtn = document.createElement('button');
                 nameBtn.className = 'btn btn-sm border-0 rounded-0 sharpsplat-file-entry';
                 nameBtn.textContent = splat.filename;
                 nameBtn.title = splat.filename;
                 nameBtn.dataset.url = splat.url;
-                nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename);
+                nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename, splat.assetType);
                 // Download button — triggers a browser file download.
                 let dlBtn = document.createElement('a');
                 dlBtn.className = 'btn btn-sm btn-link sharpsplat-icon-btn';
@@ -1314,17 +1425,19 @@ class SharpSplatTabManager {
             if (this._currentUrl && this._currentUrl.includes(encodeURIComponent(filename))) {
                 this._currentUrl = null;
                 this._currentFilename = null;
+                this._currentAssetType = null;
+                this._syncLightingVisibility();
                 this._disposeViewer();
                 let status = document.getElementById('sharpsplat_status');
                 if (status) {
-                    status.textContent = 'Select a splat from the list, or click \u201cGenerate 3D Splat\u201d on an image in the Generate tab.';
+                    status.textContent = 'Select a 3D asset from the list, or generate one from an image.';
                 }
             }
             rowElem.remove();
             // Show hint if the list is now empty.
             let listDiv = document.getElementById('sharpsplat_file_list');
             if (listDiv && listDiv.children.length === 0) {
-                listDiv.innerHTML = '<span class="sharpsplat-hint">No splats generated yet.</span>';
+                listDiv.innerHTML = '<span class="sharpsplat-hint">No 3D assets generated yet.</span>';
             }
         }
         catch (err) {
@@ -1333,15 +1446,18 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Loads a .splat file into the viewer by HTTP URL.
+    * Loads a Gaussian splat or GLB mesh into the viewer by HTTP URL.
      * Disposes any previously active viewer instance before creating a new one.
      * @param {string} url - URL of the .splat file (e.g. /View/...).
      * @param {string} filename - Display name shown in the status bar.
+     * @param {'splat'|'mesh'|null} assetType - Renderer type supplied by the asset registry.
      */
-    async loadSplat(url, filename) {
+    async loadSplat(url, filename, assetType = null) {
         let status = document.getElementById('sharpsplat_status');
         this._currentUrl = url;
         this._currentFilename = filename;
+        this._currentAssetType = assetType || (/\.glb$/i.test(filename) ? 'mesh' : 'splat');
+        this._syncLightingVisibility();
         for (let row of document.querySelectorAll('.sharpsplat-file-row')) {
             let nameBtn = row.querySelector('.sharpsplat-file-entry');
             row.classList.toggle('active', nameBtn && nameBtn.dataset.url === url);
@@ -1497,7 +1613,7 @@ async function sharpSplatGenerateVggt(images, filenamePrefix) {
 
 /**
  * Common post-generation handler: navigates to the viewer tab and loads the result.
- * @param {{splatUrl: string, filename: string}} result
+ * @param {{splatUrl: string, filename: string, assetType?: 'splat'|'mesh'}} result
  */
 async function sharpSplatFinishGeneration(result) {
     // Force another poll now that the generation is complete so the counter clears promptly.
@@ -1511,7 +1627,38 @@ async function sharpSplatFinishGeneration(result) {
         sharpSplatTab.navigateToTab();
     }
     await sharpSplatTab.refreshList();
-    await sharpSplatTab.loadSplat(result.splatUrl, filename);
+    await sharpSplatTab.loadSplat(result.splatUrl, filename, result.assetType || null);
+}
+
+/**
+ * Generates a textured GLB using ComfyUI's native Pixal3D or TRELLIS.2 workflow.
+ * @param {string} base64Data
+ * @param {string} filenamePrefix
+ * @param {'pixal3d'|'trellis2'} model
+ */
+async function sharpSplatGenerateNative3D(base64Data, filenamePrefix, model) {
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix || 'output', model: model };
+    try {
+        let generationPromise = new Promise((resolve, reject) => {
+            genericRequest('Native3DGenerateViaComfy', requestParams, (data) => {
+                if (data.success) {
+                    resolve(data);
+                }
+                else {
+                    reject(new Error(data.error || '3D model generation failed.'));
+                }
+            });
+        });
+        if (typeof updateGenCount === 'function') {
+            updateGenCount();
+        }
+        let result = await generationPromise;
+        await sharpSplatFinishGeneration(result);
+    }
+    catch (err) {
+        console.error('SharpSplat native 3D error:', err);
+        showError('SharpSplat: ' + err.message);
+    }
 }
 
 /**
@@ -1545,6 +1692,9 @@ async function handleSharpSplatGenerate(src) {
     let model = sharpSplatTab._getModel();
     if (model === 'triposplat') {
         await sharpSplatGenerateTripoSplat(base64Data, filenamePrefix);
+    }
+    else if (model === 'pixal3d' || model === 'trellis2') {
+        await sharpSplatGenerateNative3D(base64Data, filenamePrefix, model);
     }
     else {
         await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
@@ -1666,9 +1816,9 @@ setTimeout(() => {
         return;
     }
     registerMediaButton(
-        'Generate 3D Splat',
+        'Generate 3D Asset',
         (src) => handleSharpSplatGenerate(src),
-        'Generate a 3D Gaussian Splat (.splat) from this image using ml-sharp',
+        'Generate a Gaussian splat or textured GLB from this image using the selected reconstruction model',
         ['image'],
         true,
         true

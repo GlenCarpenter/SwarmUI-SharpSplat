@@ -13,12 +13,14 @@
                     </label>
                 </div>
                 <div class="sharpsplat-settings-row">
-                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_model" title="Choose the model used to reconstruct a 3D splat from the selected input" data-bs-toggle="tooltip" data-bs-placement="right">Reconstruction model</label>
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_model" title="Choose the model used to reconstruct a Gaussian splat or textured mesh" data-bs-toggle="tooltip" data-bs-placement="right">Reconstruction model</label>
                     <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_setting_model" title="Select the reconstruction model">
                         <option value="mlsharp">ml-sharp</option>
                         <option value="vggt">VGGT</option>
                         <option value="instantsplat">InstantSplat</option>
                         <option value="triposplat">TripoSplat</option>
+                        <option value="pixal3d">Pixal3D</option>
+                        <option value="trellis2">TRELLIS.2</option>
                     </select>
                 </div>
                 <div class="sharpsplat-settings-row sharpsplat-vggt-only" id="sharpsplat_row_pad_to_square" style="display:none">
@@ -27,7 +29,7 @@
                         <input class="form-check-input" type="checkbox" id="sharpsplat_setting_pad_to_square" title="Pad non-square source images">
                     </label>
                 </div>
-                <div class="sharpsplat-settings-row">
+                <div class="sharpsplat-settings-row" id="sharpsplat_row_output_format">
                     <label class="sharpsplat-settings-label" for="sharpsplat_setting_output_format" title="PLY preserves source data; SPLAT is a compact viewer-friendly format" data-bs-toggle="tooltip" data-bs-placement="right">Output format</label>
                     <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_setting_output_format" title="Choose the generated splat file format">
                         <option value="ply">PLY</option>
@@ -62,7 +64,7 @@
                         <img class="sharpsplat-input-preview-image" id="sharpsplat_input_preview" alt="Selected input preview">
                     </div>
                     <div class="sharpsplat-input-name" id="sharpsplat_input_name">No image selected.</div>
-                    <button class="btn btn-sm btn-primary" id="sharpsplat_generate_btn" title="Run the selected reconstruction model on these inputs" data-bs-toggle="tooltip" disabled>Generate Splat</button>
+                    <button class="btn btn-sm btn-primary" id="sharpsplat_generate_btn" title="Run the selected reconstruction model on these inputs" data-bs-toggle="tooltip" disabled>Generate 3D Asset</button>
                 </div>
             </div>
         </div>
@@ -116,6 +118,42 @@
                 </div>
             </div>
         </div>
+        <!-- Mesh lighting accordion -->
+        <div class="sharpsplat-accordion" id="sharpsplat_acc_lighting" style="display:none">
+            <button class="sharpsplat-accordion-header" id="sharpsplat_acc_lighting_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_lighting_body" title="Adjust lighting for the selected GLB mesh" data-bs-toggle="tooltip" data-bs-placement="right">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> Lighting
+            </button>
+            <div class="sharpsplat-accordion-body" id="sharpsplat_acc_lighting_body">
+                <div class="sharpsplat-lighting-controls">
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_exposure">
+                        <span>Exposure</span>
+                        <input type="range" id="sharpsplat_light_exposure" min="0.1" max="3" step="0.05" value="1">
+                        <output for="sharpsplat_light_exposure">1.00</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_fill">
+                        <span>Fill</span>
+                        <input type="range" id="sharpsplat_light_fill" min="0" max="5" step="0.1" value="2">
+                        <output for="sharpsplat_light_fill">2.0</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_key">
+                        <span>Key</span>
+                        <input type="range" id="sharpsplat_light_key" min="0" max="8" step="0.1" value="3">
+                        <output for="sharpsplat_light_key">3.0</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_azimuth">
+                        <span>Azimuth</span>
+                        <input type="range" id="sharpsplat_light_azimuth" min="-180" max="180" step="1" value="40">
+                        <output for="sharpsplat_light_azimuth">40&deg;</output>
+                    </label>
+                    <label class="sharpsplat-lighting-row" for="sharpsplat_light_elevation">
+                        <span>Elevation</span>
+                        <input type="range" id="sharpsplat_light_elevation" min="-90" max="90" step="1" value="45">
+                        <output for="sharpsplat_light_elevation">45&deg;</output>
+                    </label>
+                    <button class="btn btn-sm btn-outline-secondary" id="sharpsplat_light_reset" type="button" title="Restore the default mesh lighting" data-bs-toggle="tooltip">Reset Lighting</button>
+                </div>
+            </div>
+        </div>
         <!-- Export Canvas accordion -->
         <div class="sharpsplat-accordion" id="sharpsplat_acc_export">
             <button class="sharpsplat-accordion-header" id="sharpsplat_acc_export_btn" type="button" aria-expanded="false" aria-controls="sharpsplat_acc_export_body" title="Capture the current viewer angle as a PNG image" data-bs-toggle="tooltip" data-bs-placement="right">
@@ -162,15 +200,15 @@
                 </div>
             </div>
         </div>
-        <!-- Splats accordion -->
+        <!-- 3D assets accordion -->
         <div class="sharpsplat-accordion sharpsplat-accordion-flex" id="sharpsplat_acc_splats">
-            <div class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn" role="button" tabindex="0" aria-expanded="false" aria-controls="sharpsplat_acc_splats_body" title="Browse previously generated PLY and SPLAT files" data-bs-toggle="tooltip" data-bs-placement="right">
-                <span class="sharpsplat-accordion-arrow">&#9654;</span> Splats
-                <button class="btn btn-sm btn-outline-secondary sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" type="button" title="Refresh the generated splat list" data-bs-toggle="tooltip" aria-label="Refresh splat list">&#8635;</button>
+            <div class="sharpsplat-accordion-header" id="sharpsplat_acc_splats_btn" role="button" tabindex="0" aria-expanded="false" aria-controls="sharpsplat_acc_splats_body" title="Browse previously generated Gaussian splats and GLB meshes" data-bs-toggle="tooltip" data-bs-placement="right">
+                <span class="sharpsplat-accordion-arrow">&#9654;</span> 3D Assets
+                <button class="btn btn-sm btn-outline-secondary sharpsplat-acc-action-btn" id="sharpsplat_refresh_btn" type="button" title="Refresh the generated 3D asset list" data-bs-toggle="tooltip" aria-label="Refresh 3D asset list">&#8635;</button>
             </div>
             <div class="sharpsplat-accordion-body sharpsplat-accordion-body-flex" id="sharpsplat_acc_splats_body">
                 <div class="list-group list-group-flush sharpsplat-file-list" id="sharpsplat_file_list">
-                    <span class="sharpsplat-hint">No splats generated yet.</span>
+                    <span class="sharpsplat-hint">No 3D assets generated yet.</span>
                 </div>
             </div>
         </div>

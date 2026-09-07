@@ -45,6 +45,7 @@ public static class SharpSplatAPI
         API.RegisterAPICall(TripoSplatGenerateSplatViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(TripoSplatGenerateSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpListSplats, false, SharpSplatPermissions.PermGenerateSplat);
+        API.RegisterAPICall(Native3DGenerateViaComfy, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpDeleteSplat, true, SharpSplatPermissions.PermGenerateSplat);
         API.RegisterAPICall(SharpSaveCanvasExport, true, SharpSplatPermissions.PermGenerateSplat);
     }
@@ -52,6 +53,9 @@ public static class SharpSplatAPI
     /// <summary>Guards one-time dependency installation per process lifetime.</summary>
     private static volatile bool _dependenciesEnsured = false;
     private static readonly SemaphoreSlim _depLock = new(1, 1);
+
+    /// <summary>Prevents concurrent native 3D requests from downloading the same model files.</summary>
+    private static readonly SemaphoreSlim _nativeModelDownloadLock = new(1, 1);
 
     /// <summary>
     /// Runs <c>pip install</c> once per process lifetime to ensure ml-sharp is available
@@ -191,6 +195,119 @@ public static class SharpSplatAPI
         }
 
         return (outputFormat, safePrefix, outputFilename, outputPath);
+    }
+
+    /// <summary>Creates a unique user-scoped destination for a generated GLB.</summary>
+    private static (string Filename, string Path) PrepareUniqueGlbPath(Session session, string filenamePrefix, string model)
+    {
+        string safePrefix = string.Concat(
+            (filenamePrefix ?? "output")
+                .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.'));
+        if (string.IsNullOrWhiteSpace(safePrefix))
+        {
+            safePrefix = "output";
+        }
+        string modelPrefix = model == "trellis2" ? "trellis2" : "pixal3d";
+        string outputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
+        Directory.CreateDirectory(outputDir);
+        string filename = $"{modelPrefix}_{safePrefix}.glb";
+        string outputPath = Path.Combine(outputDir, filename);
+        int counter = 0;
+        while (File.Exists(outputPath))
+        {
+            counter++;
+            string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            filename = $"{modelPrefix}_{safePrefix}_{timestamp}_{counter}.glb";
+            outputPath = Path.Combine(outputDir, filename);
+        }
+        return (filename, outputPath);
+    }
+
+    /// <summary>Downloads one required native 3D model when it is not already installed.</summary>
+    private static async Task EnsureNative3DModelAsync(Session session, string name, string folderPath, string url, string hash)
+    {
+        string filePath = Path.Combine(folderPath, name);
+        if (File.Exists(filePath))
+        {
+            return;
+        }
+        Directory.CreateDirectory(folderPath);
+        string temporaryPath = $"{filePath}.tmp";
+        if (File.Exists(temporaryPath))
+        {
+            File.Delete(temporaryPath);
+        }
+        Logs.Info($"SharpSplat: Downloading required native 3D model '{name}'...");
+        double nextProgress = 0.1;
+        try
+        {
+            await Utilities.DownloadFile(url, temporaryPath, (bytes, total, _) =>
+            {
+                if (total <= 0)
+                {
+                    return;
+                }
+                double progress = bytes / (double)total;
+                if (progress >= nextProgress)
+                {
+                    Logs.Info($"SharpSplat: '{name}' download at {progress * 100:0}%...");
+                    nextProgress += 0.1;
+                }
+            }, verifyHash: hash, session: session);
+            File.Move(temporaryPath, filePath);
+        }
+        catch
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+            throw;
+        }
+        Logs.Info($"SharpSplat: Downloaded required native 3D model '{name}'.");
+    }
+
+    /// <summary>Ensures all Comfy-Org model files required by the selected native 3D workflow are installed.</summary>
+    private static async Task EnsureNative3DModelsAsync(Session session, string model)
+    {
+        await _nativeModelDownloadLock.WaitAsync();
+        try
+        {
+            string modelRoot = Program.ServerSettings.Paths.ActualModelRoot;
+            string diffusionFolder = Path.Combine(modelRoot, "diffusion_models");
+            string vaeFolder = Program.T2IModelSets["VAE"].DownloadFolderPath;
+            string clipVisionFolder = Program.T2IModelSets["ClipVision"].DownloadFolderPath;
+            string modelName = model == "trellis2" ? "trellis_2_int8_convrot.safetensors" : "pixal3d_int8_convrot.safetensors";
+            string modelUrl = model == "trellis2"
+                ? "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/diffusion_models/trellis_2_int8_convrot.safetensors"
+                : "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/diffusion_models/pixal3d_int8_convrot.safetensors";
+            string modelHash = model == "trellis2"
+                ? "d01952ad137213f6a868f86b6b877026276f84af5eec23069217475a0bad3a31"
+                : "4621eac3b715484f79303c7152af641fe0b2b14f4d0e3d394fd6922d00f955ec";
+            await EnsureNative3DModelAsync(session, modelName, diffusionFolder, modelUrl, modelHash);
+            await EnsureNative3DModelAsync(session, "dino_v3_L_naf_fp32.safetensors", clipVisionFolder,
+                "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/clip_vision/dino_v3_L_naf_fp32.safetensors",
+                "4ad2ec4e0879a5b5b04cd97325cc37da954a7b6edca5170b86510f17f2b2290f");
+            await EnsureNative3DModelAsync(session, "trellis_2_shape_vae_bf16.safetensors", vaeFolder,
+                "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/vae/trellis_2_shape_vae_bf16.safetensors",
+                "de0cb4949a76c59ee5c091a995a69bcc8c51d5aeda939f0c641a50d2a72341f4");
+            await EnsureNative3DModelAsync(session, "trellis_2_texture_vae_bf16.safetensors", vaeFolder,
+                "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/vae/trellis_2_texture_vae_bf16.safetensors",
+                "714e5ebf094a610e12a8e3b5175c18a62f37f6ea4218acb6073644456b73ab0e");
+            await EnsureNative3DModelAsync(session, "birefnet.safetensors", Path.Combine(modelRoot, "background_removal"),
+                "https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors",
+                "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154");
+            if (model == "pixal3d")
+            {
+                await EnsureNative3DModelAsync(session, "moge_2_vitl_normal_fp16.safetensors", Path.Combine(modelRoot, "geometry_estimation"),
+                    "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+                    "cb1a692d03235671e959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f");
+            }
+        }
+        finally
+        {
+            _nativeModelDownloadLock.Release();
+        }
     }
 
     /// <summary>
@@ -425,7 +542,103 @@ public static class SharpSplatAPI
             ["filename"] = outputFilename
         };
     }
-
+    
+    /// <summary>Generates a textured GLB through ComfyUI's native Pixal3D or TRELLIS.2 pipeline.</summary>
+    public static async Task<JObject> Native3DGenerateViaComfy(Session session, string imageBase64, string filenamePrefix = "output", string model = "pixal3d", long seed = -1)
+    {
+        if (string.IsNullOrWhiteSpace(imageBase64))
+        {
+            return new JObject { ["success"] = false, ["error"] = "No image data provided." };
+        }
+        try
+        {
+            Convert.FromBase64String(imageBase64);
+        }
+        catch (FormatException)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
+        }
+        model = model?.ToLowerInvariant() ?? "pixal3d";
+        if (model != "pixal3d" && model != "trellis2")
+        {
+            return new JObject { ["success"] = false, ["error"] = "Model must be 'pixal3d' or 'trellis2'." };
+        }
+        ComfyUISelfStartBackend backend = ComfyUIBackendExtension.RunningComfyBackends
+            .OfType<ComfyUISelfStartBackend>()
+            .FirstOrDefault();
+        if (backend is null)
+        {
+            return new JObject { ["success"] = false, ["error"] = "Pixal3D and TRELLIS.2 require a running local ComfyUI backend." };
+        }
+        try
+        {
+            await EnsureNative3DModelsAsync(session, model);
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: Could not provision native {model} model files: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = $"Could not download required {model} model files: {ex.Message}" };
+        }
+        if (seed < 0)
+        {
+            seed = Random.Shared.NextInt64(0, long.MaxValue - 1);
+        }
+        else if (seed == long.MaxValue)
+        {
+            seed--;
+        }
+        (string outputFilename, string outputPath) = PrepareUniqueGlbPath(session, filenamePrefix, model);
+        string jobId = Guid.NewGuid().ToString("N");
+        string comfyRelativePrefix = $"sharpsplat3d/{jobId}";
+        string comfyOutputDir = Path.GetFullPath(Path.Combine(backend.ComfyPathBase, "output", "sharpsplat3d"));
+        JObject workflow = Native3DWorkflow.Build(imageBase64, model, seed, comfyRelativePrefix);
+        try
+        {
+            Logs.Info($"SharpSplat: Submitting native {model} PBR mesh generation via ComfyUI for '{outputFilename}'...");
+            using Session.GenClaim claim = session.Claim(liveGens: 1);
+            await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { }, false);
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: Native {model} ComfyUI workflow error: {ex.Message}");
+            string modelFile = model == "trellis2" ? "diffusion_models/trellis_2_int8_convrot.safetensors" : "diffusion_models/pixal3d_int8_convrot.safetensors";
+            string pixalRequirement = model == "pixal3d" ? ", geometry_estimation/moge_2_vitl_normal_fp16.safetensors" : "";
+            return new JObject
+            {
+                ["success"] = false,
+                ["error"] = $"ComfyUI {model} workflow failed: {ex.Message}. Update ComfyUI and install {modelFile}, clip_vision/dino_v3_L_naf_fp32.safetensors, vae/trellis_2_shape_vae_bf16.safetensors, vae/trellis_2_texture_vae_bf16.safetensors, background_removal/birefnet.safetensors{pixalRequirement} from the Comfy-Org model repositories."
+            };
+        }
+        string comfyOutputPath = Directory.Exists(comfyOutputDir)
+            ? Directory.GetFiles(comfyOutputDir, $"{jobId}_*.glb", SearchOption.TopDirectoryOnly)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault()
+            : null;
+        if (comfyOutputPath is null)
+        {
+            Logs.Error($"SharpSplat: Native {model} workflow completed but no GLB matching '{jobId}_*.glb' was found in '{comfyOutputDir}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but the GLB output was not found. Check server logs." };
+        }
+        File.Copy(comfyOutputPath, outputPath, overwrite: false);
+        try
+        {
+            File.Delete(comfyOutputPath);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"SharpSplat: Could not remove temporary Comfy GLB '{comfyOutputPath}': {ex.Message}");
+        }
+        string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
+        long outputBytes = new FileInfo(outputPath).Length;
+        Logs.Info($"SharpSplat: Native {model} produced '{outputFilename}' ({outputBytes} bytes) at {outputUrl}.");
+        return new JObject
+        {
+            ["success"] = true,
+            ["splatUrl"] = outputUrl,
+            ["filename"] = outputFilename,
+            ["assetType"] = "mesh"
+        };
+    }
     /// <summary>
     /// Generates a Gaussian splat PLY via the <c>VGGTSplatGenerate</c> ComfyUI custom node.
     /// Submits a single-node workflow through the Comfy backend queue so VGGT shares
@@ -1088,7 +1301,7 @@ public static class SharpSplatAPI
     }
 
     /// <summary>
-    /// Returns a list of .splat files previously generated for this user,
+    /// Returns a list of splat and mesh files previously generated for this user,
     /// ordered newest-first, for display in the Splat Viewer tab sidebar.
     /// </summary>
     /// <param name="session">The calling user session.</param>
@@ -1100,7 +1313,9 @@ public static class SharpSplatAPI
             return Task.FromResult(new JObject { ["success"] = true, ["splats"] = new JArray() });
         }
         string[] files = Directory.GetFiles(splatsDir)
-            .Where(f => f.EndsWith(".splat", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".ply", StringComparison.OrdinalIgnoreCase))
+            .Where(f => f.EndsWith(".splat", StringComparison.OrdinalIgnoreCase)
+                || f.EndsWith(".ply", StringComparison.OrdinalIgnoreCase)
+                || f.EndsWith(".glb", StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
             .ToArray();
         JArray arr = new();
@@ -1110,7 +1325,8 @@ public static class SharpSplatAPI
             arr.Add(new JObject
             {
                 ["filename"] = fn,
-                ["url"] = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(fn)}"
+                ["url"] = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(fn)}",
+                ["assetType"] = fn.EndsWith(".glb", StringComparison.OrdinalIgnoreCase) ? "mesh" : "splat"
             });
         }
         return Task.FromResult(new JObject { ["success"] = true, ["splats"] = arr });
@@ -1128,7 +1344,8 @@ public static class SharpSplatAPI
             (filename ?? "")
                 .Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ' '));
         bool validExtension = safeFilename.EndsWith(".splat", StringComparison.OrdinalIgnoreCase)
-            || safeFilename.EndsWith(".ply", StringComparison.OrdinalIgnoreCase);
+            || safeFilename.EndsWith(".ply", StringComparison.OrdinalIgnoreCase)
+            || safeFilename.EndsWith(".glb", StringComparison.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(safeFilename) || !validExtension)
         {
             return Task.FromResult(new JObject { ["success"] = false, ["error"] = "Invalid filename." });
