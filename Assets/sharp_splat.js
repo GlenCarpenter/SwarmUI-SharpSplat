@@ -39,7 +39,7 @@ async function sharpSplatGetImageBase64(src) {
 }
 
 /**
- * Manages the Splat Viewer tab — file list sidebar and persistent WebGL viewer.
+ * Manages the Splat Viewer tab, file list sidebar, and isolated 3D viewer.
  */
 class SharpSplatTabManager {
     constructor() {
@@ -47,7 +47,7 @@ class SharpSplatTabManager {
         this._viewerFrame = null;
         /** @type {boolean} Whether the active viewer frame has initialized. */
         this._viewerFrameReady = false;
-        /** @type {boolean} Whether the frame has an active splat. */
+        /** @type {boolean} Whether the frame has an active 3D asset. */
         this._viewerLoaded = false;
         /** @type {Object|null} Latest serializable camera/canvas state from the frame. */
         this._cameraState = null;
@@ -55,10 +55,12 @@ class SharpSplatTabManager {
         this._frameRequestId = 0;
         /** @type {Map<number, {resolve: Function, reject: Function, timeout: number}>} Pending frame requests. */
         this._frameRequests = new Map();
-        /** @type {string|null} URL of the currently loaded splat. */
+        /** @type {string|null} URL of the currently loaded 3D asset. */
         this._currentUrl = null;
-        /** @type {string|null} Display name of the currently selected splat. */
+        /** @type {string|null} Display name of the currently selected 3D asset. */
         this._currentFilename = null;
+        /** @type {'splat'|'mesh'|null} Renderer type for the selected 3D asset. */
+        this._currentAssetType = null;
         /** @type {boolean} Whether the Splat Viewer tab is currently visible. */
         this._tabActive = false;
         /** @type {boolean} Whether DOM event handlers have been wired up. */
@@ -363,7 +365,7 @@ class SharpSplatTabManager {
         }
     }
 
-    /** Creates the sandboxed iframe that owns all GaussianSplats3D execution. */
+    /** Creates the sandboxed iframe that owns all 3D rendering execution. */
     _mountViewerFrame() {
         if (!this._tabActive || this._viewerFrame) {
             return;
@@ -374,7 +376,7 @@ class SharpSplatTabManager {
         }
         let frame = document.createElement('iframe');
         frame.className = 'sharpsplat-viewer-frame';
-        frame.title = 'Gaussian splat viewer';
+        frame.title = '3D asset viewer';
         frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         frame.src = sharpSplatFrameUrl;
         this._viewerFrame = frame;
@@ -440,7 +442,7 @@ class SharpSplatTabManager {
             this._viewerLoaded = false;
             let status = document.getElementById('sharpsplat_status');
             if (status) {
-                status.textContent = 'Error loading ' + (this._currentFilename || 'splat') + ': ' + payload.message;
+                status.textContent = 'Error loading ' + (this._currentFilename || '3D asset') + ': ' + payload.message;
             }
         }
         else if (message.type === 'response' && message.requestId !== null) {
@@ -453,7 +455,7 @@ class SharpSplatTabManager {
         }
     }
 
-    /** Sends the selected splat and current control settings into the ready frame. */
+    /** Sends the selected 3D asset and current control settings into the ready frame. */
     _loadCurrentSplatInFrame() {
         if (!this._currentUrl) {
             return;
@@ -462,11 +464,15 @@ class SharpSplatTabManager {
         this._viewerLoaded = false;
         this._cameraState = null;
         this._initialCameraState = null;
-        this._sendFrameCommand('load', { url: this._currentUrl, invertControls: !!(invertToggle && invertToggle.checked) });
+        this._sendFrameCommand('load', {
+            url: this._currentUrl,
+            assetType: this._currentAssetType,
+            invertControls: !!(invertToggle && invertToggle.checked)
+        });
     }
 
     /**
-     * Returns the currently selected model ('mlsharp', 'vggt', or 'instantsplat').
+    * Returns the currently selected reconstruction model.
      */
     _getModel() {
         let sel = document.getElementById('sharpsplat_setting_model');
@@ -491,6 +497,14 @@ class SharpSplatTabManager {
     _isMultiViewModel() {
         let model = this._getModel();
         return model === 'vggt' || model === 'instantsplat';
+    }
+
+    /**
+     * Returns true when the selected model produces a textured GLB mesh.
+     */
+    _isMeshModel() {
+        let model = this._getModel();
+        return model === 'pixal3d' || model === 'trellis2';
     }
 
     /**
@@ -519,6 +533,14 @@ class SharpSplatTabManager {
         let padRow = document.getElementById('sharpsplat_row_pad_to_square');
         if (padRow) {
             padRow.style.display = isMultiView ? '' : 'none';
+        }
+        let outputFormatRow = document.getElementById('sharpsplat_row_output_format');
+        if (outputFormatRow) {
+            outputFormatRow.style.display = this._isMeshModel() ? 'none' : '';
+        }
+        let generateBtn = document.getElementById('sharpsplat_generate_btn');
+        if (generateBtn) {
+            generateBtn.textContent = this._isMeshModel() ? 'Generate 3D Model' : 'Generate Splat';
         }
     }
 
@@ -986,6 +1008,13 @@ class SharpSplatTabManager {
                 let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
                 await sharpSplatGenerateTripoSplat(this._inputImageBase64, filenamePrefix);
             }
+            else if (this._isMeshModel()) {
+                if (!this._inputImageBase64) {
+                    return;
+                }
+                let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
+                await sharpSplatGenerateNative3D(this._inputImageBase64, filenamePrefix, this._getModel());
+            }
             else {
                 if (!this._inputImageBase64) {
                     return;
@@ -1248,19 +1277,19 @@ class SharpSplatTabManager {
             });
             let splats = result.splats || [];
             if (splats.length === 0) {
-                listDiv.innerHTML = '<span class="sharpsplat-hint">No splats generated yet.</span>';
+                listDiv.innerHTML = '<span class="sharpsplat-hint">No 3D assets generated yet.</span>';
                 return;
             }
             listDiv.innerHTML = '';
             for (let splat of splats) {
                 let row = createDiv(null, 'list-group-item d-flex align-items-center p-0 sharpsplat-file-row' + (splat.url === this._currentUrl ? ' active' : ''));
-                // Name button — loads the splat into the viewer.
+                // Name button loads the asset into the appropriate iframe renderer.
                 let nameBtn = document.createElement('button');
                 nameBtn.className = 'btn btn-sm border-0 rounded-0 sharpsplat-file-entry';
                 nameBtn.textContent = splat.filename;
                 nameBtn.title = splat.filename;
                 nameBtn.dataset.url = splat.url;
-                nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename);
+                nameBtn.onclick = () => this.loadSplat(splat.url, splat.filename, splat.assetType);
                 // Download button — triggers a browser file download.
                 let dlBtn = document.createElement('a');
                 dlBtn.className = 'btn btn-sm btn-link sharpsplat-icon-btn';
@@ -1314,17 +1343,18 @@ class SharpSplatTabManager {
             if (this._currentUrl && this._currentUrl.includes(encodeURIComponent(filename))) {
                 this._currentUrl = null;
                 this._currentFilename = null;
+                this._currentAssetType = null;
                 this._disposeViewer();
                 let status = document.getElementById('sharpsplat_status');
                 if (status) {
-                    status.textContent = 'Select a splat from the list, or click \u201cGenerate 3D Splat\u201d on an image in the Generate tab.';
+                    status.textContent = 'Select a 3D asset from the list, or generate one from an image.';
                 }
             }
             rowElem.remove();
             // Show hint if the list is now empty.
             let listDiv = document.getElementById('sharpsplat_file_list');
             if (listDiv && listDiv.children.length === 0) {
-                listDiv.innerHTML = '<span class="sharpsplat-hint">No splats generated yet.</span>';
+                listDiv.innerHTML = '<span class="sharpsplat-hint">No 3D assets generated yet.</span>';
             }
         }
         catch (err) {
@@ -1333,15 +1363,17 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Loads a .splat file into the viewer by HTTP URL.
+    * Loads a Gaussian splat or GLB mesh into the viewer by HTTP URL.
      * Disposes any previously active viewer instance before creating a new one.
      * @param {string} url - URL of the .splat file (e.g. /View/...).
      * @param {string} filename - Display name shown in the status bar.
+     * @param {'splat'|'mesh'|null} assetType - Renderer type supplied by the asset registry.
      */
-    async loadSplat(url, filename) {
+    async loadSplat(url, filename, assetType = null) {
         let status = document.getElementById('sharpsplat_status');
         this._currentUrl = url;
         this._currentFilename = filename;
+        this._currentAssetType = assetType || (/\.glb$/i.test(filename) ? 'mesh' : 'splat');
         for (let row of document.querySelectorAll('.sharpsplat-file-row')) {
             let nameBtn = row.querySelector('.sharpsplat-file-entry');
             row.classList.toggle('active', nameBtn && nameBtn.dataset.url === url);
@@ -1497,7 +1529,7 @@ async function sharpSplatGenerateVggt(images, filenamePrefix) {
 
 /**
  * Common post-generation handler: navigates to the viewer tab and loads the result.
- * @param {{splatUrl: string, filename: string}} result
+ * @param {{splatUrl: string, filename: string, assetType?: 'splat'|'mesh'}} result
  */
 async function sharpSplatFinishGeneration(result) {
     // Force another poll now that the generation is complete so the counter clears promptly.
@@ -1511,7 +1543,38 @@ async function sharpSplatFinishGeneration(result) {
         sharpSplatTab.navigateToTab();
     }
     await sharpSplatTab.refreshList();
-    await sharpSplatTab.loadSplat(result.splatUrl, filename);
+    await sharpSplatTab.loadSplat(result.splatUrl, filename, result.assetType || null);
+}
+
+/**
+ * Generates a textured GLB using ComfyUI's native Pixal3D or TRELLIS.2 workflow.
+ * @param {string} base64Data
+ * @param {string} filenamePrefix
+ * @param {'pixal3d'|'trellis2'} model
+ */
+async function sharpSplatGenerateNative3D(base64Data, filenamePrefix, model) {
+    let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix || 'output', model: model };
+    try {
+        let generationPromise = new Promise((resolve, reject) => {
+            genericRequest('Native3DGenerateViaComfy', requestParams, (data) => {
+                if (data.success) {
+                    resolve(data);
+                }
+                else {
+                    reject(new Error(data.error || '3D model generation failed.'));
+                }
+            });
+        });
+        if (typeof updateGenCount === 'function') {
+            updateGenCount();
+        }
+        let result = await generationPromise;
+        await sharpSplatFinishGeneration(result);
+    }
+    catch (err) {
+        console.error('SharpSplat native 3D error:', err);
+        showError('SharpSplat: ' + err.message);
+    }
 }
 
 /**
@@ -1545,6 +1608,9 @@ async function handleSharpSplatGenerate(src) {
     let model = sharpSplatTab._getModel();
     if (model === 'triposplat') {
         await sharpSplatGenerateTripoSplat(base64Data, filenamePrefix);
+    }
+    else if (model === 'pixal3d' || model === 'trellis2') {
+        await sharpSplatGenerateNative3D(base64Data, filenamePrefix, model);
     }
     else {
         await sharpSplatGenerateFromBase64(base64Data, filenamePrefix);
@@ -1666,9 +1732,9 @@ setTimeout(() => {
         return;
     }
     registerMediaButton(
-        'Generate 3D Splat',
+        'Generate 3D Asset',
         (src) => handleSharpSplatGenerate(src),
-        'Generate a 3D Gaussian Splat (.splat) from this image using ml-sharp',
+        'Generate a Gaussian splat or textured GLB from this image using the selected reconstruction model',
         ['image'],
         true,
         true

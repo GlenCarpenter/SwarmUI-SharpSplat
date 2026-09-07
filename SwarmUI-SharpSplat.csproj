@@ -23,4 +23,9 @@
     <Compile Remove="**/._*" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- API-format adaptation of Comfy-Org/workflow_templates: templates/3d_pixal3d_trellis2_image_to_model.json -->
+    <EmbeddedResource Include="Workflows/3d_pixal3d_trellis2_image_to_model.api.json" LogicalName="SharpSplat.Workflows.Native3DImageToModel" />
+  </ItemGroup>
+
 </Project>
