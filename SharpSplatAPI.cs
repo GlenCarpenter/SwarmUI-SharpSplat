@@ -283,7 +283,7 @@ public static class SharpSplatAPI
                 : "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/diffusion_models/pixal3d_int8_convrot.safetensors";
             string modelHash = model == "trellis2"
                 ? "d01952ad137213f6a868f86b6b877026276f84af5eec23069217475a0bad3a31"
-                : "4621eac3b715484f79303c7152af641fe0b214f4d0e3d394fd6922d00f955ec";
+                : "4621eac3b715484f79303c7152af641fe0b2b14f4d0e3d394fd6922d00f955ec";
             await EnsureNative3DModelAsync(session, modelName, diffusionFolder, modelUrl, modelHash);
             await EnsureNative3DModelAsync(session, "dino_v3_L_naf_fp32.safetensors", clipVisionFolder,
                 "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/clip_vision/dino_v3_L_naf_fp32.safetensors",
@@ -301,7 +301,7 @@ public static class SharpSplatAPI
             {
                 await EnsureNative3DModelAsync(session, "moge_2_vitl_normal_fp16.safetensors", Path.Combine(modelRoot, "geometry_estimation"),
                     "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
-                    "cb1a692d03235671959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f");
+                    "cb1a692d03235671e959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f");
             }
         }
         finally
