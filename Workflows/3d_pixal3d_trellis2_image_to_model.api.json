@@ -135,12 +135,10 @@
     "inputs": {
       "mesh": ["24", 0],
       "resolution": 768,
-      "sign_mode": {
-        "sign_mode": "udf",
-        "qef": false,
-        "drop_inverted_components": false,
-        "drop_enclosed_components": false
-      },
+      "sign_mode": "udf",
+      "sign_mode.qef": false,
+      "sign_mode.drop_inverted_components": false,
+      "sign_mode.drop_enclosed_components": false,
       "band": 1.0,
       "project_back": 0.0,
       "fix_poles": false,
@@ -154,7 +152,7 @@
     "inputs": {
       "mesh": ["27", 0],
       "target_face_count": 700000,
-      "placement_mode": { "placement_mode": "midpoint" }
+      "placement_mode": "midpoint"
     }
   },
   "29": { "class_type": "MeshSmoothNormals", "inputs": { "mesh": ["28", 0], "crease_angle": 180.0 } },
