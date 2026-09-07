@@ -34,6 +34,13 @@ public class SharpSplatExtension : Extension
         OtherAssets.Add("Assets/splat-viewer-frame.bundle.js");
         // Register the ComfyNodes folder so ComfyUI picks up the SharpSplatGenerate node.
         ComfyUISelfStartBackend.CustomNodePaths.Add(Path.GetFullPath($"{FilePath}/ComfyNodes"));
+        foreach (string folder in new[] { "background_removal", "geometry_estimation" })
+        {
+            if (!ComfyUISelfStartBackend.FoldersToForwardInComfyPath.Contains(folder))
+            {
+                ComfyUISelfStartBackend.FoldersToForwardInComfyPath.Add(folder);
+            }
+        }
 
         // Hidden T2I param so the user's format preference travels through the generation pipeline.
         OutputFormat = T2IParamTypes.Register<string>(new(

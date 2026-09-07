@@ -54,6 +54,9 @@ public static class SharpSplatAPI
     private static volatile bool _dependenciesEnsured = false;
     private static readonly SemaphoreSlim _depLock = new(1, 1);
 
+    /// <summary>Prevents concurrent native 3D requests from downloading the same model files.</summary>
+    private static readonly SemaphoreSlim _nativeModelDownloadLock = new(1, 1);
+
     /// <summary>
     /// Runs <c>pip install</c> once per process lifetime to ensure ml-sharp is available
     /// in the Python environment used for inference.
@@ -218,6 +221,93 @@ public static class SharpSplatAPI
             outputPath = Path.Combine(outputDir, filename);
         }
         return (filename, outputPath);
+    }
+
+    /// <summary>Downloads one required native 3D model when it is not already installed.</summary>
+    private static async Task EnsureNative3DModelAsync(Session session, string name, string folderPath, string url, string hash)
+    {
+        string filePath = Path.Combine(folderPath, name);
+        if (File.Exists(filePath))
+        {
+            return;
+        }
+        Directory.CreateDirectory(folderPath);
+        string temporaryPath = $"{filePath}.tmp";
+        if (File.Exists(temporaryPath))
+        {
+            File.Delete(temporaryPath);
+        }
+        Logs.Info($"SharpSplat: Downloading required native 3D model '{name}'...");
+        double nextProgress = 0.1;
+        try
+        {
+            await Utilities.DownloadFile(url, temporaryPath, (bytes, total, _) =>
+            {
+                if (total <= 0)
+                {
+                    return;
+                }
+                double progress = bytes / (double)total;
+                if (progress >= nextProgress)
+                {
+                    Logs.Info($"SharpSplat: '{name}' download at {progress * 100:0}%...");
+                    nextProgress += 0.1;
+                }
+            }, verifyHash: hash, session: session);
+            File.Move(temporaryPath, filePath);
+        }
+        catch
+        {
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+            throw;
+        }
+        Logs.Info($"SharpSplat: Downloaded required native 3D model '{name}'.");
+    }
+
+    /// <summary>Ensures all Comfy-Org model files required by the selected native 3D workflow are installed.</summary>
+    private static async Task EnsureNative3DModelsAsync(Session session, string model)
+    {
+        await _nativeModelDownloadLock.WaitAsync();
+        try
+        {
+            string modelRoot = Program.ServerSettings.Paths.ActualModelRoot;
+            string diffusionFolder = Path.Combine(modelRoot, "diffusion_models");
+            string vaeFolder = Program.T2IModelSets["VAE"].DownloadFolderPath;
+            string clipVisionFolder = Program.T2IModelSets["ClipVision"].DownloadFolderPath;
+            string modelName = model == "trellis2" ? "trellis_2_int8_convrot.safetensors" : "pixal3d_int8_convrot.safetensors";
+            string modelUrl = model == "trellis2"
+                ? "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/diffusion_models/trellis_2_int8_convrot.safetensors"
+                : "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/diffusion_models/pixal3d_int8_convrot.safetensors";
+            string modelHash = model == "trellis2"
+                ? "d01952ad137213f6a868f86b6b877026276f84af5eec23069217475a0bad3a31"
+                : "4621eac3b715484f79303c7152af641fe0b214f4d0e3d394fd6922d00f955ec";
+            await EnsureNative3DModelAsync(session, modelName, diffusionFolder, modelUrl, modelHash);
+            await EnsureNative3DModelAsync(session, "dino_v3_L_naf_fp32.safetensors", clipVisionFolder,
+                "https://huggingface.co/Comfy-Org/Pixal3D/resolve/main/clip_vision/dino_v3_L_naf_fp32.safetensors",
+                "4ad2ec4e0879a5b5b04cd97325cc37da954a7b6edca5170b86510f17f2b2290f");
+            await EnsureNative3DModelAsync(session, "trellis_2_shape_vae_bf16.safetensors", vaeFolder,
+                "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/vae/trellis_2_shape_vae_bf16.safetensors",
+                "de0cb4949a76c59ee5c091a995a69bcc8c51d5aeda939f0c641a50d2a72341f4");
+            await EnsureNative3DModelAsync(session, "trellis_2_texture_vae_bf16.safetensors", vaeFolder,
+                "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/main/vae/trellis_2_texture_vae_bf16.safetensors",
+                "714e5ebf094a610e12a8e3b5175c18a62f37f6ea4218acb6073644456b73ab0e");
+            await EnsureNative3DModelAsync(session, "birefnet.safetensors", Path.Combine(modelRoot, "background_removal"),
+                "https://huggingface.co/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors",
+                "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154");
+            if (model == "pixal3d")
+            {
+                await EnsureNative3DModelAsync(session, "moge_2_vitl_normal_fp16.safetensors", Path.Combine(modelRoot, "geometry_estimation"),
+                    "https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/moge_2_vitl_normal_fp16.safetensors",
+                    "cb1a692d03235671959e81360d7b4d9f44aefadb1f852d6ca6aa17799d5e31f");
+            }
+        }
+        finally
+        {
+            _nativeModelDownloadLock.Release();
+        }
     }
 
     /// <summary>
@@ -479,6 +569,15 @@ public static class SharpSplatAPI
         if (backend is null)
         {
             return new JObject { ["success"] = false, ["error"] = "Pixal3D and TRELLIS.2 require a running local ComfyUI backend." };
+        }
+        try
+        {
+            await EnsureNative3DModelsAsync(session, model);
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"SharpSplat: Could not provision native {model} model files: {ex.Message}");
+            return new JObject { ["success"] = false, ["error"] = $"Could not download required {model} model files: {ex.Message}" };
         }
         if (seed < 0)
         {

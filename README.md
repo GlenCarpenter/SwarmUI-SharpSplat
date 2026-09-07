@@ -6,16 +6,18 @@ A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns im
 https://github.com/user-attachments/assets/c71d7912-4fa1-4b15-a6fe-c7ea75f13da8
 
 
-Four reconstruction models are supported:
+Six reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
 - **TripoSplat** — VAST-AI's [TripoSplat](https://huggingface.co/VAST-AI/TripoSplat). Takes a **single image** and produces a full 3D Gaussian Splat using a latent diffusion pipeline with spherical harmonics; often higher fidelity than ml-sharp, especially for object-centric subjects.
 - **VGGT** — Facebook's [Visual Geometry Grounded Transformer](https://github.com/facebookresearch/vggt) (CVPR 2025 Best Paper). Works with a **single image or multiple images** of the same scene from different angles; more views produce a denser, more accurate point cloud.
 - **InstantSplat** — NVIDIA's [InstantSplat](https://github.com/NVlabs/InstantSplat). Takes **multiple images** and uses MASt3R geometry initialisation to produce a coloured point cloud.
+- **Pixal3D** — TencentARC's native ComfyUI image-to-3D pipeline. Takes a **single image** and produces a PBR-textured GLB mesh with camera-aware conditioning.
+- **TRELLIS.2** — Microsoft's native ComfyUI image-to-3D pipeline. Takes a **single image** and produces a PBR-textured GLB mesh.
 
 > **Note:** VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
 
-Results are saved as `.ply` (default) or `.splat` and rendered interactively in a dedicated **Splat Viewer** tab powered by [GaussianSplats3D](https://github.com/mkkellogg/GaussianSplats3D/).
+Gaussian results are saved as `.ply` (default) or `.splat`; Pixal3D and TRELLIS.2 results are saved as `.glb`. All formats are rendered interactively in the dedicated **Splat Viewer** tab.
 
 ---
 
@@ -68,6 +70,8 @@ Python dependencies are installed automatically on first use:
 | [huggingface_hub](https://github.com/huggingface/huggingface_hub) | Downloads VGGT / TripoSplat model weights (first run only) |
 | [InstantSplat](https://github.com/NVlabs/InstantSplat) | MASt3R-based multi-view reconstruction (cloned from GitHub on first use, ~1.2 GB checkpoint downloaded automatically) |
 | [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` conversion (only needed when output format is `.splat`) |
+
+Pixal3D and TRELLIS.2 use ComfyUI's native nodes. Their Comfy-Org model files are downloaded automatically on first use and verified by SHA-256. A fresh TRELLIS.2 installation downloads approximately 8.9 GB; Pixal3D requires a similarly large download plus its MoGe camera-estimation model.
 
 ---
 
