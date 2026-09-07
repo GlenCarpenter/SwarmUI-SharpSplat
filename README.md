@@ -57,8 +57,10 @@ Single image           Single image        1+ images (VGGT)     2+ images (Insta
 ## Requirements
 
 - SwarmUI with a working ComfyUI backend (provides the Python environment).
-- An NVIDIA GPU is strongly recommended for both models.
+- An NVIDIA GPU is strongly recommended for reconstruction.
 - Internet access on first use to download model weights and install Python dependencies.
+
+> **GPU and memory disclosure:** Pixal3D and TRELLIS.2 are substantially more resource-intensive than the splat viewer and the lighter reconstruction paths. They keep the GPU busy for an extended period and can require significant VRAM, system RAM, temporary working memory, and disk space while generating geometry, remeshing, and baking PBR textures. Exact requirements depend on the GPU, backend configuration, and input, but low-VRAM systems may run slowly due to model offloading or fail with an out-of-memory error. Close other GPU-heavy applications and avoid running multiple native 3D jobs concurrently.
 
 Python dependencies are installed automatically on first use:
 
@@ -71,7 +73,7 @@ Python dependencies are installed automatically on first use:
 | [InstantSplat](https://github.com/NVlabs/InstantSplat) | MASt3R-based multi-view reconstruction (cloned from GitHub on first use, ~1.2 GB checkpoint downloaded automatically) |
 | [ply2splat](https://github.com/bastikohn/ply2splat) | PLY → `.splat` conversion (only needed when output format is `.splat`) |
 
-Pixal3D and TRELLIS.2 use ComfyUI's native nodes. Their Comfy-Org model files are downloaded automatically on first use and verified by SHA-256. A fresh TRELLIS.2 installation downloads approximately 8.9 GB; Pixal3D requires a similarly large download plus its MoGe camera-estimation model.
+Pixal3D and TRELLIS.2 use ComfyUI's native nodes. Their Comfy-Org model files are downloaded automatically on first use and verified by SHA-256. A fresh TRELLIS.2 installation downloads approximately 8.9 GB; Pixal3D requires a similarly large download plus its MoGe camera-estimation model. These downloads are separate from the temporary memory and output storage used during generation.
 
 ---
 
@@ -169,7 +171,7 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 | Setting | Description |
 |---|---|
 | **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
-| **Reconstruction model** | `ml-sharp` (single image, fast), `TripoSplat` (single image, diffusion-based, higher fidelity), `VGGT` (1+ images, denser point cloud), or `InstantSplat` (2+ images, MASt3R point cloud). |
+| **Reconstruction model** | `ml-sharp` (single image, fast), `TripoSplat` (single image, diffusion-based), `VGGT` (1+ images), `InstantSplat` (2+ images), `Pixal3D` (single-image PBR mesh), or `TRELLIS.2` (single-image PBR mesh). |
 | **Pad images to square** | *(VGGT / InstantSplat)* Resize each input image to fit within a square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
 | **Generate Repair Prompt button** | Shows the **Generate Repair Prompt** button in the Export Canvas section. Intended for use with the ml-sharp repair LoRA — see below. Off by default. |
@@ -241,6 +243,23 @@ This button is hidden by default. Enable it in **Settings → Generate Repair Pr
 | Orbit | Left-click + drag |
 | Zoom | Scroll wheel |
 | Pan | Right-click + drag |
+
+#### Mesh lighting
+
+When a `.glb` mesh is selected, the sidebar shows a **Lighting** section. The controls update the rendered view immediately:
+
+| Control | Effect |
+|---|---|
+| **Exposure** | Adjusts tone-mapping exposure for the complete rendered image. |
+| **Fill** | Controls soft hemisphere illumination, including light from above and darker fill from below. |
+| **Key** | Controls the intensity of the main directional light. |
+| **Azimuth** | Rotates the key light horizontally around the model. |
+| **Elevation** | Moves the key light above or below the model. |
+| **Reset Lighting** | Restores the default exposure, intensities, and key-light direction. |
+
+Lighting settings are remembered between browser sessions. They affect the interactive viewer and images captured with **Export Canvas**, but they do not modify the GLB file or its embedded `KHR_lights_punctual` lights. Lighting controls are hidden for Gaussian splats because splat colors are rendered without the mesh lighting setup.
+
+The built-in mesh viewer is intended for previewing generated assets and producing quick canvas captures, not for replacing a full 3D content-creation application. Downloaded GLB files can be imported into Blender through **File → Import → glTF 2.0 (.glb/.gltf)**, or opened in other software with glTF 2.0 support. From there, continue the workflow with persistent scene lights, cameras, materials, animation, compositing, and renderer-specific effects. The appearance may vary between applications because environment lighting, color management, shadows, and some renderer settings are not stored portably in the GLB.
 
 ---
 
