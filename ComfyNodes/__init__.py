@@ -3,6 +3,13 @@ import traceback
 NODE_CLASS_MAPPINGS = {}
 
 try:
+    from . import MoGeSplatNode
+    NODE_CLASS_MAPPINGS.update(MoGeSplatNode.NODE_CLASS_MAPPINGS)
+except Exception:
+    print("Error: [SharpSplat] MoGeSplatNode not available")
+    traceback.print_exc()
+
+try:
     from . import SharpSplatNode
     NODE_CLASS_MAPPINGS.update(SharpSplatNode.NODE_CLASS_MAPPINGS)
 except Exception:

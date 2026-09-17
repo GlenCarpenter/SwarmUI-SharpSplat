@@ -8,7 +8,14 @@ The .splat format is a packed 32-byte-per-splat binary that gsplat.js can load
 without any property-type parsing issues.
 """
 import sys
-import ply2splat
+
+try:
+    import ply2splat
+except ImportError:
+    from pinned_stack import pip_install
+
+    pip_install("ply2splat")
+    import ply2splat
 
 if len(sys.argv) != 3:
     print(f"Usage: {sys.argv[0]} <input.ply> <output.splat>", file=sys.stderr)

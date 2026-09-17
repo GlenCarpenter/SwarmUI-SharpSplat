@@ -6,7 +6,7 @@ A [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) extension that turns im
 https://github.com/user-attachments/assets/c71d7912-4fa1-4b15-a6fe-c7ea75f13da8
 
 
-Six reconstruction models are supported:
+Nine reconstruction models are supported:
 
 - **ml-sharp** *(default)* — Apple's monocular 3DGS model. Takes a **single image** and produces a Gaussian Splat in seconds.
 - **TripoSplat** — VAST-AI's [TripoSplat](https://huggingface.co/VAST-AI/TripoSplat). Takes a **single image** and produces a full 3D Gaussian Splat using a latent diffusion pipeline with spherical harmonics; often higher fidelity than ml-sharp, especially for object-centric subjects.
@@ -14,10 +14,13 @@ Six reconstruction models are supported:
 - **InstantSplat** — NVIDIA's [InstantSplat](https://github.com/NVlabs/InstantSplat). Takes **multiple images** and uses MASt3R geometry initialisation to produce a coloured point cloud.
 - **Pixal3D** — TencentARC's native ComfyUI image-to-3D pipeline. Takes a **single image** and produces a PBR-textured GLB mesh with camera-aware conditioning.
 - **TRELLIS.2** — Microsoft's native ComfyUI image-to-3D pipeline. Takes a **single image** and produces a PBR-textured GLB mesh.
+- **MoGe-1** - Microsoft's single-image geometry estimation baseline, without metric scale.
+- **MoGe-2** - Adds metric scale and predicted normals.
+- **MoGe-3** - Adds sparse volumetric refinement for finer geometry; uses the ViT-L checkpoint.
 
 > **Note:** VGGT and InstantSplat output geometry-initialised point clouds represented as Gaussians with fixed scale and opacity — they are not the result of a full 3DGS training optimisation loop. Results are usable for previewing and exporting but will not match the quality of a dedicated 3DGS training pipeline.
 
-Gaussian results are saved as `.ply` (default) or `.splat`; Pixal3D and TRELLIS.2 results are saved as `.glb`. All formats are rendered interactively in the dedicated **Splat Viewer** tab.
+Gaussian results are saved as `.ply` (default) or `.splat`; Pixal3D and TRELLIS.2 results are saved as `.glb`. MoGe supports textured GLB, untextured GLB, Gaussian PLY, and Gaussian SPLAT. All formats are rendered interactively in the dedicated **Splat Viewer** tab.
 
 ---
 
@@ -75,6 +78,30 @@ Python dependencies are installed automatically on first use:
 
 Pixal3D and TRELLIS.2 use ComfyUI's native nodes. Their Comfy-Org model files are downloaded automatically on first use and verified by SHA-256. A fresh TRELLIS.2 installation downloads approximately 8.9 GB; Pixal3D requires a similarly large download plus its MoGe camera-estimation model. These downloads are separate from the temporary memory and output storage used during generation.
 
+MoGe also uses native ComfyUI inference, including MoGe-3 support present in current ComfyUI source even though the [ComfyUI tutorial](https://docs.comfy.org/tutorials/utility/moge) only describes MoGe-1/2. Update ComfyUI and its dependencies, then restart SwarmUI and the backend after installing this extension update. Gaussian output additionally uses the extension's `SharpSplatMoGeToSplat` adapter and ComfyUI's `SplatToFile3D` / `SaveGaussianSplat` nodes. No separate Microsoft MoGe Python installation is required.
+
+Only the selected MoGe checkpoint is downloaded on first use, into SwarmUI's `geometry_estimation` model folder forwarded to ComfyUI. Downloads use the existing lock, temporary-file cleanup, and SHA-256 verification. Existing files are reused; MoGe-2 also reuses the checkpoint installed for Pixal3D. Sources are the [official Comfy-Org/MoGe repository](https://huggingface.co/Comfy-Org/MoGe/tree/main/geometry_estimation):
+
+| Model | Checkpoint | Approximate Download |
+|---|---|---|
+| MoGe-1 | `moge_1_vitl_fp16.safetensors` | 628 MB |
+| MoGe-2 | `moge_2_vitl_normal_fp16.safetensors` | 662 MB |
+| MoGe-3 | `moge_3_vitl_fp16.safetensors` | 741 MB |
+
+Compact SPLAT export automatically installs `ply2splat` when missing using the existing NumPy-constrained installer. It does not install ml-sharp or VGGT.
+
+### MoGe Regression Checks
+
+From the extension directory:
+
+```sh
+dotnet run --project tests/WorkflowChecks.csproj -p:StaticWebAssetsEnabled=false
+python -m unittest discover -s tests -p test_moge.py -v
+node --check Assets/sharp_splat.js
+```
+
+Use the ComfyUI Python environment (or another environment with PyTorch) for the Python tests. These checks cover workflow selection, API validation, and geometry-to-Gaussian conversion without downloading model weights or running inference.
+
 ---
 
 ## Installation
@@ -101,7 +128,18 @@ git clone https://github.com/GlenCarpenter/SwarmUI-SharpSplat
 3. Wait for inference (30–120 seconds depending on GPU).
 4. The **Splat Viewer** tab opens automatically with the result loaded.
 
-> **Note:** The **Generate 3D Splat** button in the image viewer uses whichever single-image model is selected in **Splat Viewer → Settings → Reconstruction model** (`ml-sharp` or `TripoSplat`). VGGT and InstantSplat require multiple images and must be used from the Splat Viewer tab directly.
+> **Note:** The **Generate 3D Splat** button in the image viewer uses the selected single-image model, including Pixal3D, TRELLIS.2, and all MoGe versions. For MoGe it also uses the selected MoGe output format. Use the Splat Viewer tab directly for VGGT and InstantSplat.
+
+### Generating MoGe geometry or Gaussian splats
+
+1. Select **MoGe-1**, **MoGe-2**, or **MoGe-3** in **Splat Viewer → Settings → Reconstruction model**.
+2. Choose **MoGe output**: **Textured GLB**, **Untextured GLB**, **Gaussian PLY**, or **Gaussian SPLAT**.
+3. Set **Resolution level** (0-9, default 9). MoGe-3 also exposes **Refinement steps** (0-8, default 3; 0 disables refinement).
+4. Supply one image in the Input Image panel and generate, or use the image viewer's generation button.
+
+GLB outputs are meshes, with the source image embedded as a texture when enabled. Gaussian PLY and SPLAT contain geometry-derived Gaussians, with RGB-derived spherical-harmonic colors, adaptive isotropic scales, and fixed opacity. They are not optimized 3DGS reconstructions, and PLY here means **Gaussian PLY**, not a triangle mesh or plain point cloud. MoGe estimates visible surfaces only; hidden surfaces and object backsides remain missing. See the [MoGe project](https://github.com/microsoft/MoGe) and [MoGe-3 project page](https://qft-333.github.io/moge3page/).
+
+All outputs are saved in the user's `splats` directory, listed in the viewer, and downloadable. The output choice and inference settings persist between sessions. The `<sharpsplat>` automatic prompt tag does not select MoGe.
 
 You can also drop or browse to an image in the **Splat Viewer** sidebar directly.
 
@@ -171,7 +209,10 @@ Open **Settings** in the Splat Viewer sidebar to configure:
 | Setting | Description |
 |---|---|
 | **Open in viewer after generation** | Automatically navigate to the Splat Viewer tab when a splat finishes. |
-| **Reconstruction model** | `ml-sharp` (single image, fast), `TripoSplat` (single image, diffusion-based), `VGGT` (1+ images), `InstantSplat` (2+ images), `Pixal3D` (single-image PBR mesh), or `TRELLIS.2` (single-image PBR mesh). |
+| **Reconstruction model** | `ml-sharp`, `TripoSplat`, `VGGT`, `InstantSplat`, `Pixal3D`, `TRELLIS.2`, `MoGe-1`, `MoGe-2`, or `MoGe-3`. |
+| **MoGe output** | Textured GLB (default), untextured GLB, Gaussian PLY, or compact Gaussian SPLAT. Separate from the other models' output preference. |
+| **Resolution level** | *(MoGe)* 0-9, default 9. Higher levels capture more detail at higher inference cost. |
+| **Refinement steps** | *(MoGe-3)* 0-8, default 3. Sparse refinement passes; 0 disables refinement. |
 | **Pad images to square** | *(VGGT / InstantSplat)* Resize each input image to fit within a square and pad with neutral grey rather than centre-cropping. Useful when your source images are landscape or portrait. Low-confidence grey border splats are filtered out automatically. |
 | **Output format** | `PLY` (default, no conversion) or `SPLAT` (compact binary, requires `ply2splat`). |
 | **Generate Repair Prompt button** | Shows the **Generate Repair Prompt** button in the Export Canvas section. Intended for use with the ml-sharp repair LoRA — see below. Off by default. |

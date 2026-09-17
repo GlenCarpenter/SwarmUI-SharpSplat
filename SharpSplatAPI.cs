@@ -197,8 +197,8 @@ public static class SharpSplatAPI
         return (outputFormat, safePrefix, outputFilename, outputPath);
     }
 
-    /// <summary>Creates a unique user-scoped destination for a generated GLB.</summary>
-    private static (string Filename, string Path) PrepareUniqueGlbPath(Session session, string filenamePrefix, string model)
+    /// <summary>Creates a unique user-scoped destination for a generated native 3D asset.</summary>
+    private static (string Filename, string Path) PrepareUniqueNative3DPath(Session session, string filenamePrefix, string model, string extension)
     {
         string safePrefix = string.Concat(
             (filenamePrefix ?? "output")
@@ -207,17 +207,17 @@ public static class SharpSplatAPI
         {
             safePrefix = "output";
         }
-        string modelPrefix = model == "trellis2" ? "trellis2" : "pixal3d";
+        string modelPrefix = model;
         string outputDir = Path.Combine(WebServer.GetUserOutputRoot(session.User), "splats");
         Directory.CreateDirectory(outputDir);
-        string filename = $"{modelPrefix}_{safePrefix}.glb";
+        string filename = $"{modelPrefix}_{safePrefix}.{extension}";
         string outputPath = Path.Combine(outputDir, filename);
         int counter = 0;
         while (File.Exists(outputPath))
         {
             counter++;
             string timestamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
-            filename = $"{modelPrefix}_{safePrefix}_{timestamp}_{counter}.glb";
+            filename = $"{modelPrefix}_{safePrefix}_{timestamp}_{counter}.{extension}";
             outputPath = Path.Combine(outputDir, filename);
         }
         return (filename, outputPath);
@@ -274,6 +274,13 @@ public static class SharpSplatAPI
         try
         {
             string modelRoot = Program.ServerSettings.Paths.ActualModelRoot;
+            if (Native3DWorkflow.IsMoGe(model))
+            {
+                (string Filename, string Hash) checkpoint = Native3DWorkflow.MoGeCheckpoint(model);
+                await EnsureNative3DModelAsync(session, checkpoint.Filename, Path.Combine(modelRoot, "geometry_estimation"),
+                    $"https://huggingface.co/Comfy-Org/MoGe/resolve/main/geometry_estimation/{checkpoint.Filename}", checkpoint.Hash);
+                return;
+            }
             string diffusionFolder = Path.Combine(modelRoot, "diffusion_models");
             string vaeFolder = Program.T2IModelSets["VAE"].DownloadFolderPath;
             string clipVisionFolder = Program.T2IModelSets["ClipVision"].DownloadFolderPath;
@@ -543,8 +550,8 @@ public static class SharpSplatAPI
         };
     }
     
-    /// <summary>Generates a textured GLB through ComfyUI's native Pixal3D or TRELLIS.2 pipeline.</summary>
-    public static async Task<JObject> Native3DGenerateViaComfy(Session session, string imageBase64, string filenamePrefix = "output", string model = "pixal3d", long seed = -1)
+    /// <summary>Generates a mesh or Gaussian asset through ComfyUI's native 3D pipelines.</summary>
+    public static async Task<JObject> Native3DGenerateViaComfy(Session session, string imageBase64, string filenamePrefix = "output", string model = "pixal3d", long seed = -1, int resolutionLevel = 9, int refineSteps = 3, string outputFormat = "glb")
     {
         if (string.IsNullOrWhiteSpace(imageBase64))
         {
@@ -559,16 +566,28 @@ public static class SharpSplatAPI
             return new JObject { ["success"] = false, ["error"] = "Invalid base64 image data." };
         }
         model = model?.ToLowerInvariant() ?? "pixal3d";
-        if (model != "pixal3d" && model != "trellis2")
+        if (model != "pixal3d" && model != "trellis2" && !Native3DWorkflow.IsMoGe(model))
         {
-            return new JObject { ["success"] = false, ["error"] = "Model must be 'pixal3d' or 'trellis2'." };
+            return new JObject { ["success"] = false, ["error"] = "Model must be 'pixal3d', 'trellis2', 'moge1', 'moge2', or 'moge3'." };
         }
+        if (Native3DWorkflow.IsMoGe(model) && (resolutionLevel < 0 || resolutionLevel > 9 || refineSteps < 0 || refineSteps > 8))
+        {
+            return new JObject { ["success"] = false, ["error"] = "MoGe resolution level must be 0-9 and refinement steps must be 0-8." };
+        }
+        outputFormat = outputFormat?.ToLowerInvariant() ?? "glb";
+        if (outputFormat is not ("glb" or "glb_untextured" or "ply" or "splat") || (!Native3DWorkflow.IsMoGe(model) && outputFormat != "glb"))
+        {
+            return new JObject { ["success"] = false, ["error"] = "MoGe output must be 'glb', 'glb_untextured', 'ply' (Gaussian), or 'splat'. Pixal3D and TRELLIS.2 require 'glb'." };
+        }
+        bool gaussian = outputFormat is "ply" or "splat";
+        string outputExtension = gaussian ? outputFormat : "glb";
+        string comfyExtension = gaussian ? "ply" : "glb";
         ComfyUISelfStartBackend backend = ComfyUIBackendExtension.RunningComfyBackends
             .OfType<ComfyUISelfStartBackend>()
             .FirstOrDefault();
         if (backend is null)
         {
-            return new JObject { ["success"] = false, ["error"] = "Pixal3D and TRELLIS.2 require a running local ComfyUI backend." };
+            return new JObject { ["success"] = false, ["error"] = "Native 3D generation requires a running local ComfyUI backend." };
         }
         try
         {
@@ -587,20 +606,28 @@ public static class SharpSplatAPI
         {
             seed--;
         }
-        (string outputFilename, string outputPath) = PrepareUniqueGlbPath(session, filenamePrefix, model);
+        (string outputFilename, string outputPath) = PrepareUniqueNative3DPath(session, filenamePrefix, model, outputExtension);
         string jobId = Guid.NewGuid().ToString("N");
         string comfyRelativePrefix = $"sharpsplat3d/{jobId}";
         string comfyOutputDir = Path.GetFullPath(Path.Combine(backend.ComfyPathBase, "output", "sharpsplat3d"));
-        JObject workflow = Native3DWorkflow.Build(imageBase64, model, seed, comfyRelativePrefix);
+        JObject workflow = Native3DWorkflow.Build(imageBase64, model, seed, comfyRelativePrefix, resolutionLevel, refineSteps, outputFormat);
         try
         {
-            Logs.Info($"SharpSplat: Submitting native {model} PBR mesh generation via ComfyUI for '{outputFilename}'...");
+            Logs.Info($"SharpSplat: Submitting native {model} {outputFormat} generation via ComfyUI for '{outputFilename}'...");
             using Session.GenClaim claim = session.Claim(liveGens: 1);
             await ComfyUIBackendExtension.RunArbitraryWorkflowOnFirstBackend(workflow.ToString(), _ => { }, false);
         }
         catch (Exception ex)
         {
             Logs.Error($"SharpSplat: Native {model} ComfyUI workflow error: {ex.Message}");
+            if (Native3DWorkflow.IsMoGe(model))
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = $"ComfyUI {model} workflow failed: {ex.Message}. Update ComfyUI and its dependencies, then restart the backend. MoGe requires native MoGe inference and mesh nodes; Gaussian export also requires SharpSplatMoGeToSplat, SplatToFile3D and SaveGaussianSplat. MoGe-3 requires native MoGe-3 model and sparse refinement support. Check that geometry_estimation/{Native3DWorkflow.MoGeCheckpoint(model).Filename} is visible to ComfyUI."
+                };
+            }
             string modelFile = model == "trellis2" ? "diffusion_models/trellis_2_int8_convrot.safetensors" : "diffusion_models/pixal3d_int8_convrot.safetensors";
             string pixalRequirement = model == "pixal3d" ? ", geometry_estimation/moge_2_vitl_normal_fp16.safetensors" : "";
             return new JObject
@@ -610,23 +637,61 @@ public static class SharpSplatAPI
             };
         }
         string comfyOutputPath = Directory.Exists(comfyOutputDir)
-            ? Directory.GetFiles(comfyOutputDir, $"{jobId}_*.glb", SearchOption.TopDirectoryOnly)
+            ? Directory.GetFiles(comfyOutputDir, $"{jobId}_*.{comfyExtension}", SearchOption.TopDirectoryOnly)
                 .OrderByDescending(File.GetLastWriteTimeUtc)
                 .FirstOrDefault()
             : null;
         if (comfyOutputPath is null)
         {
-            Logs.Error($"SharpSplat: Native {model} workflow completed but no GLB matching '{jobId}_*.glb' was found in '{comfyOutputDir}'.");
-            return new JObject { ["success"] = false, ["error"] = "Workflow completed but the GLB output was not found. Check server logs." };
+            Logs.Error($"SharpSplat: Native {model} workflow completed but no output matching '{jobId}_*.{comfyExtension}' was found in '{comfyOutputDir}'.");
+            return new JObject { ["success"] = false, ["error"] = "Workflow completed but the 3D output was not found. Check server logs." };
         }
-        File.Copy(comfyOutputPath, outputPath, overwrite: false);
+        if (outputFormat == "splat")
+        {
+            string temporaryPath = $"{outputPath}.{jobId}.tmp";
+            try
+            {
+                ProcessStartInfo convertPsi = BuildPythonPsi();
+                convertPsi.ArgumentList.Add("-s");
+                convertPsi.ArgumentList.Add(Path.GetFullPath($"{SharpSplatExtension.ExtFolder}/run_convert.py"));
+                convertPsi.ArgumentList.Add(comfyOutputPath);
+                convertPsi.ArgumentList.Add(temporaryPath);
+                using Process process = Process.Start(convertPsi);
+                Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+                Task<string> stderr = process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                Logs.Debug($"SharpSplat conversion: {await stdout}");
+                string error = await stderr;
+                if (process.ExitCode != 0 || !File.Exists(temporaryPath) || new FileInfo(temporaryPath).Length == 0)
+                {
+                    throw new InvalidOperationException($"PLY to SPLAT conversion failed (exit {process.ExitCode}): {error}");
+                }
+                File.Move(temporaryPath, outputPath);
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"SharpSplat: {ex.Message}");
+                return new JObject { ["success"] = false, ["error"] = ex.Message };
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
+            }
+        }
+        else
+        {
+            File.Copy(comfyOutputPath, outputPath, overwrite: false);
+        }
         try
         {
             File.Delete(comfyOutputPath);
         }
         catch (Exception ex)
         {
-            Logs.Warning($"SharpSplat: Could not remove temporary Comfy GLB '{comfyOutputPath}': {ex.Message}");
+            Logs.Warning($"SharpSplat: Could not remove temporary Comfy output '{comfyOutputPath}': {ex.Message}");
         }
         string outputUrl = $"/View/{Uri.EscapeDataString(session.User.UserID)}/splats/{Uri.EscapeDataString(outputFilename)}";
         long outputBytes = new FileInfo(outputPath).Length;
@@ -636,7 +701,7 @@ public static class SharpSplatAPI
             ["success"] = true,
             ["splatUrl"] = outputUrl,
             ["filename"] = outputFilename,
-            ["assetType"] = "mesh"
+            ["assetType"] = gaussian ? "splat" : "mesh"
         };
     }
     /// <summary>

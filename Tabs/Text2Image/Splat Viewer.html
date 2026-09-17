@@ -21,7 +21,27 @@
                         <option value="triposplat">TripoSplat</option>
                         <option value="pixal3d">Pixal3D</option>
                         <option value="trellis2">TRELLIS.2</option>
+                        <option value="moge1">MoGe-1</option>
+                        <option value="moge2">MoGe-2</option>
+                        <option value="moge3">MoGe-3</option>
                     </select>
+                </div>
+                <div class="sharpsplat-settings-row" id="sharpsplat_row_moge_output" style="display:none">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_moge_output" title="Mesh or geometry-derived Gaussian output" data-bs-toggle="tooltip" data-bs-placement="right">MoGe output</label>
+                    <select class="form-select form-select-sm sharpsplat-settings-select" id="sharpsplat_setting_moge_output" title="Select the MoGe output representation and file format">
+                        <option value="glb">Textured GLB</option>
+                        <option value="glb_untextured">Untextured GLB</option>
+                        <option value="ply">Gaussian PLY</option>
+                        <option value="splat">Gaussian SPLAT</option>
+                    </select>
+                </div>
+                <div class="sharpsplat-settings-row" id="sharpsplat_row_moge_resolution" style="display:none">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_moge_resolution" title="MoGe inference detail: 0 is fastest, 9 captures the most detail" data-bs-toggle="tooltip" data-bs-placement="right">Resolution level</label>
+                    <input class="form-control form-control-sm sharpsplat-settings-select" type="number" id="sharpsplat_setting_moge_resolution" min="0" max="9" step="1" value="9" required title="MoGe resolution level (0-9)">
+                </div>
+                <div class="sharpsplat-settings-row" id="sharpsplat_row_moge_refine" style="display:none">
+                    <label class="sharpsplat-settings-label" for="sharpsplat_setting_moge_refine" title="MoGe-3 sparse refinement passes; 0 disables refinement, more passes take longer" data-bs-toggle="tooltip" data-bs-placement="right">Refinement steps</label>
+                    <input class="form-control form-control-sm sharpsplat-settings-select" type="number" id="sharpsplat_setting_moge_refine" min="0" max="8" step="1" value="3" required title="MoGe-3 refinement steps (0-8)">
                 </div>
                 <div class="sharpsplat-settings-row sharpsplat-vggt-only" id="sharpsplat_row_pad_to_square" style="display:none">
                     <label class="sharpsplat-settings-label" for="sharpsplat_setting_pad_to_square" title="Preserve the full frame by padding non-square images instead of cropping them" data-bs-toggle="tooltip" data-bs-placement="right">Pad images to square</label>
