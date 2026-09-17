@@ -180,6 +180,31 @@ class SharpSplatTabManager {
                 this._onModelChange();
             });
         }
+        let mogeOutputSelect = document.getElementById('sharpsplat_setting_moge_output');
+        if (mogeOutputSelect) {
+            mogeOutputSelect.value = localStorage.getItem('sharpsplat_moge_output') || 'glb';
+            if (!mogeOutputSelect.value) {
+                mogeOutputSelect.value = 'glb';
+            }
+            mogeOutputSelect.addEventListener('change', () => {
+                localStorage.setItem('sharpsplat_moge_output', mogeOutputSelect.value);
+                this._applyDropzoneMode();
+            });
+        }
+        for (let setting of ['moge_resolution', 'moge_refine']) {
+            let input = document.getElementById('sharpsplat_setting_' + setting);
+            if (input) {
+                input.value = localStorage.getItem('sharpsplat_' + setting) ?? input.defaultValue;
+                if (!input.checkValidity()) {
+                    input.value = input.defaultValue;
+                }
+                input.addEventListener('change', () => {
+                    if (input.checkValidity()) {
+                        localStorage.setItem('sharpsplat_' + setting, input.value);
+                    }
+                });
+            }
+        }
         // Restore and persist the VGGT pad-to-square checkbox.
         let padCheck = document.getElementById('sharpsplat_setting_pad_to_square');
         if (padCheck) {
@@ -582,11 +607,17 @@ class SharpSplatTabManager {
     }
 
     /**
-     * Returns true when the selected model produces a textured GLB mesh.
+    * Returns true when the selected model uses the native 3D generation API.
      */
-    _isMeshModel() {
+    _isNative3DModel() {
         let model = this._getModel();
-        return model === 'pixal3d' || model === 'trellis2';
+        return ['pixal3d', 'trellis2', 'moge1', 'moge2', 'moge3'].includes(model);
+    }
+
+    _isMeshModel() {
+        let output = document.getElementById('sharpsplat_setting_moge_output');
+        let gaussian = ['moge1', 'moge2', 'moge3'].includes(this._getModel()) && output && ['ply', 'splat'].includes(output.value);
+        return this._isNative3DModel() && !gaussian;
     }
 
     /**
@@ -618,7 +649,19 @@ class SharpSplatTabManager {
         }
         let outputFormatRow = document.getElementById('sharpsplat_row_output_format');
         if (outputFormatRow) {
-            outputFormatRow.style.display = this._isMeshModel() ? 'none' : '';
+            outputFormatRow.style.display = this._isNative3DModel() ? 'none' : '';
+        }
+        let mogeOutputRow = document.getElementById('sharpsplat_row_moge_output');
+        if (mogeOutputRow) {
+            mogeOutputRow.style.display = ['moge1', 'moge2', 'moge3'].includes(this._getModel()) ? '' : 'none';
+        }
+        let mogeResolutionRow = document.getElementById('sharpsplat_row_moge_resolution');
+        if (mogeResolutionRow) {
+            mogeResolutionRow.style.display = ['moge1', 'moge2', 'moge3'].includes(this._getModel()) ? '' : 'none';
+        }
+        let mogeRefineRow = document.getElementById('sharpsplat_row_moge_refine');
+        if (mogeRefineRow) {
+            mogeRefineRow.style.display = this._getModel() === 'moge3' ? '' : 'none';
         }
         let generateBtn = document.getElementById('sharpsplat_generate_btn');
         if (generateBtn) {
@@ -1090,7 +1133,7 @@ class SharpSplatTabManager {
                 let filenamePrefix = sharpSplatGetFilenamePrefix(this._inputImageName || 'output');
                 await sharpSplatGenerateTripoSplat(this._inputImageBase64, filenamePrefix);
             }
-            else if (this._isMeshModel()) {
+            else if (this._isNative3DModel()) {
                 if (!this._inputImageBase64) {
                     return;
                 }
@@ -1631,13 +1674,28 @@ async function sharpSplatFinishGeneration(result) {
 }
 
 /**
- * Generates a textured GLB using ComfyUI's native Pixal3D or TRELLIS.2 workflow.
+ * Generates a mesh or Gaussian asset using ComfyUI's native 3D workflows.
  * @param {string} base64Data
  * @param {string} filenamePrefix
- * @param {'pixal3d'|'trellis2'} model
+ * @param {'pixal3d'|'trellis2'|'moge1'|'moge2'|'moge3'} model
  */
 async function sharpSplatGenerateNative3D(base64Data, filenamePrefix, model) {
     let requestParams = { imageBase64: base64Data, filenamePrefix: filenamePrefix || 'output', model: model };
+    if (['moge1', 'moge2', 'moge3'].includes(model)) {
+        let outputSelect = document.getElementById('sharpsplat_setting_moge_output');
+        requestParams.outputFormat = outputSelect ? outputSelect.value : 'glb';
+        let settings = [{ id: 'moge_resolution', param: 'resolutionLevel', fallback: 9 }];
+        if (model === 'moge3') {
+            settings.push({ id: 'moge_refine', param: 'refineSteps', fallback: 3 });
+        }
+        for (let setting of settings) {
+            let input = document.getElementById('sharpsplat_setting_' + setting.id);
+            if (input && !input.reportValidity()) {
+                return;
+            }
+            requestParams[setting.param] = input ? Number(input.value) : setting.fallback;
+        }
+    }
     try {
         let generationPromise = new Promise((resolve, reject) => {
             genericRequest('Native3DGenerateViaComfy', requestParams, (data) => {
@@ -1693,7 +1751,7 @@ async function handleSharpSplatGenerate(src) {
     if (model === 'triposplat') {
         await sharpSplatGenerateTripoSplat(base64Data, filenamePrefix);
     }
-    else if (model === 'pixal3d' || model === 'trellis2') {
+    else if (sharpSplatTab._isNative3DModel()) {
         await sharpSplatGenerateNative3D(base64Data, filenamePrefix, model);
     }
     else {
